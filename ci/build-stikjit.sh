@@ -30,6 +30,7 @@ xcodebuild archive \
   -archivePath "$WORK/StikJIT-iOS" \
   SKIP_INSTALL=NO \
   BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+  OTHER_SWIFT_FLAGS='$(inherited) -Xfrontend -alias-module-names-in-module-interface' \
   CODE_SIGNING_ALLOWED=NO
 
 FRAMEWORK="$WORK/StikJIT-iOS.xcarchive/Products/Library/Frameworks/StikJIT.framework"
