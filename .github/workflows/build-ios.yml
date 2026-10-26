@@ -1,0 +1,69 @@
+name: Build iOS (unsigned IPA)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/ram-donor]
+
+concurrency:
+  group: build-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 360
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-archives
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install tools
+        run: |
+          brew install cmake ninja xcodegen pkg-config autoconf automake libtool
+          xcodebuild -downloadComponent MetalToolchain
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: .vcpkg-archives
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json', 'triplets/**', 'dependencies/vcpkg_overlay_ports*/**') }}
+          restore-keys: vcpkg-${{ runner.os }}-
+
+      - name: Build StikJIT
+        run: |
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+          ci/build-stikjit.sh
+
+      - name: Build Cemu.framework
+        run: |
+          cmake -S . -B build-ios -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DVCPKG_TARGET_TRIPLET=arm64-ios \
+            -DBUILD_HEADLESS_DYLIB=ON -DCMAKE_MACOSX_BUNDLE=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-ios --target CemuBin
+          mkdir -p build-ios/out
+          rm -rf build-ios/out/Cemu.framework
+          cp -R build-ios/src/Cemu.framework build-ios/out/
+
+      - name: Build app (unsigned)
+        working-directory: src/ios
+        run: |
+          xcodegen generate
+          xcodebuild -project EspressU.xcodeproj -scheme EspressU -sdk iphoneos -configuration Release \
+            -derivedDataPath "$GITHUB_WORKSPACE/build-xcode" CODE_SIGNING_ALLOWED=NO build
+
+      - name: Package IPA
+        run: |
+          APP="$(find build-xcode/Build/Products -maxdepth 2 -name EspressU.app | head -1)"
+          test -d "$APP/PlugIns/EspressURamDonor.appex" || { echo "RAM donor extension missing from the app"; exit 1; }
+          rm -rf Payload && mkdir Payload && cp -R "$APP" Payload/
+          zip -qry EspressU.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EspressU-unsigned-ipa
+          path: EspressU.ipa
+          if-no-files-found: error
