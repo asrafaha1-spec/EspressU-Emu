@@ -12,7 +12,6 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #import <mach/mach.h>
-#import <mach/mach_vm.h>
 #import <os/proc.h>
 #import <os/log.h>
 #import <xpc/xpc.h>
@@ -82,8 +81,8 @@ __attribute__((constructor)) static void ESPRamDonorLoaded(void)
 @interface ESPChunk : NSObject
 {
 @public
-    mach_vm_address_t address;
-    mach_vm_size_t size;
+    vm_address_t address;
+    vm_size_t size;
 }
 @end
 @implementation ESPChunk
@@ -121,8 +120,8 @@ static void ESPHandleAlloc(xpc_object_t request, xpc_object_t reply)
         return;
     }
 
-    mach_vm_address_t address = 0;
-    kern_return_t kr = mach_vm_allocate(mach_task_self(), &address, size, VM_FLAGS_ANYWHERE);
+    vm_address_t address = 0;
+    kern_return_t kr = vm_allocate(mach_task_self(), &address, size, VM_FLAGS_ANYWHERE);
     if (kr != KERN_SUCCESS)
     {
         ESPReplyError(reply, mach_error_string(kr));
@@ -139,7 +138,7 @@ static void ESPHandleAlloc(xpc_object_t request, xpc_object_t reply)
     xpc_object_t shmem = xpc_shmem_create((void *)(uintptr_t)address, (size_t)size);
     if (!shmem)
     {
-        mach_vm_deallocate(mach_task_self(), address, size);
+        vm_deallocate(mach_task_self(), address, size);
         ESPReplyError(reply, "xpc_shmem_create returned NULL");
         return;
     }
@@ -162,7 +161,7 @@ static void ESPHandleFree(xpc_object_t request, xpc_object_t reply)
     ESPChunk *chunk = sChunks[key];
     if (chunk)
     {
-        mach_vm_deallocate(mach_task_self(), chunk->address, chunk->size);
+        vm_deallocate(mach_task_self(), chunk->address, chunk->size);
         [sChunks removeObjectForKey:key];
     }
     xpc_dictionary_set_bool(reply, ESP_DONOR_KEY_OK, chunk != nil);
