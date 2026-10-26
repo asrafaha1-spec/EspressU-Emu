@@ -28,4 +28,4 @@
 #define ESP_DONOR_OP_QUIT  "quit"
 
 // NSExtensionItem.userInfo key that carries the host's NSXPCListenerEndpoint.
-#define ESP_DONOR_USERINFO_ENDPOINT @"endpoint"
+#define ESP_DONOR_USERINFO_ENDPOINT "endpoint"  // use as @ESP_DONOR_USERINFO_ENDPOINT in Objective-C

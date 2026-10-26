@@ -64,6 +64,12 @@ xcodebuild -project EspressU.xcodeproj -scheme EspressU -sdk iphoneos -configura
 
 The result is an unsigned `EspressU.app`. Zip it into a `Payload` folder as an `.ipa` and sign it with your own certificate. It needs the entitlements `get-task-allow`, `com.apple.developer.kernel.increased-memory-limit` and `com.apple.developer.kernel.extended-virtual-addressing`.
 
+## RAM limit workaround (experimental)
+
+EspressU ships a small app extension, `EspressURamDonor`. At game launch the app starts a few copies of it; each allocates memory in its own process (with its own iOS memory limit) and shares it back with `xpc_shmem`, and the app remaps that memory over the large guest ranges (MEM2). If donors can't supply enough, the rest of the range uses normal memory.
+
+Settings (`NSUserDefaults`): `espressu.ramDonor.enabled` (default on), `espressu.ramDonor.maxDonors` (default 4, max 8), `espressu.ramDonor.prefault` (default off). The extension needs the `increased-memory-limit` entitlement and a signature that keeps app extensions. It uses private APIs (`NSExtension`, `NSXPCListenerEndpoint`, `NSXPCDecoder`), so it can break on new iOS versions. Untested on device so far.
+
 ## License
 
 [MPL-2.0](LICENSE.txt). EspressU is built on Cemu; the copyright notices in the source files stay in place. Libraries and their licenses are listed in [docs/docs/licenses.html](docs/docs/licenses.html) and in the app under Settings › About.

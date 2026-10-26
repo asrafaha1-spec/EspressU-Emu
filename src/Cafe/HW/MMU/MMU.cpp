@@ -6,6 +6,7 @@
 #include "config/ActiveSettings.h"
 #if BOOST_OS_IOS
 #include "util/MemMapper/SparseReservation.h"
+#include "ios/Bridge/IOSRamDonor.h"
 #endif
 
 uint8* memory_base = NULL;
@@ -45,7 +46,14 @@ static void* memory_commitRange(uint32 offset, uint32 size)
 		return nullptr;
 	}
 #endif
-	return MemMapper::AllocateMemory(memory_base + offset, size, MemMapper::PAGE_PERMISSION::P_RW, true);
+	void* committed = MemMapper::AllocateMemory(memory_base + offset, size, MemMapper::PAGE_PERMISSION::P_RW, true);
+#if BOOST_OS_IOS
+	// RAM limit workaround: large ranges are backed by memory held in donor extension processes.
+	// Partial or failed donation is fine, the rest of the range keeps the ordinary pages.
+	if (committed && size >= IOSRamDonor::kMinRegionBytes)
+		IOSRamDonor::BackWithDonors(memory_base + offset, size);
+#endif
+	return committed;
 }
 
 void checkMemAlloc(void* result)
@@ -144,6 +152,9 @@ void MMURange::unmapMem()
 	{
 		const auto start = std::chrono::steady_clock::now();
 		MemMapper::FreeMemory(memory_base + baseAddress, size, true);
+#if BOOST_OS_IOS
+		IOSRamDonor::Release(memory_base + baseAddress, size);
+#endif
 		const auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
 		cemuLog_log(LogType::Force, "Guest memory: replaced {} ({} MiB) with fresh pages in {}.{} ms", name, size / (1024 * 1024), us / 1000, (us % 1000) / 100);
 	}

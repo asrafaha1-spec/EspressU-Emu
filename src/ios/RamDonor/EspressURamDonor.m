@@ -191,7 +191,7 @@ static void ESPHandleFree(xpc_object_t request, xpc_object_t reply)
             continue;
         NSDictionary *info = ((NSExtensionItem *)item).userInfo;
         seenKeys = info.allKeys;
-        id candidate = info[ESP_DONOR_USERINFO_ENDPOINT];
+        id candidate = info[@ESP_DONOR_USERINFO_ENDPOINT];
         if ([candidate isKindOfClass:NSXPCListenerEndpoint.class])
             endpoint = candidate;
         else if (candidate)

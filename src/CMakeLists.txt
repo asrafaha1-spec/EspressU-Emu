@@ -103,6 +103,9 @@ if(IOS)
 	set_source_files_properties(gui/uikit/EmulatedUSBDevices.mm ios/Bridge/CemuBridge.mm PROPERTIES
 		COMPILE_OPTIONS "-fobjc-arc;-include;${CMAKE_SOURCE_DIR}/src/Common/precompiled.h"
 		SKIP_PRECOMPILE_HEADERS ON)
+	set_source_files_properties(ios/Bridge/IOSRamDonor.mm PROPERTIES
+		COMPILE_OPTIONS "-fobjc-arc"
+		SKIP_PRECOMPILE_HEADERS ON)
 	set_source_files_properties(ios/Bridge/IOSMotion.mm PROPERTIES
 		COMPILE_OPTIONS "-fobjc-arc"
 		SKIP_PRECOMPILE_HEADERS ON)
@@ -121,6 +124,8 @@ if(IOS)
 		ios/Bridge/IOSMotion.mm
 		ios/Bridge/CemuDeviceCaps.h
 		ios/Bridge/IOSDeviceCaps.cpp
+		ios/Bridge/IOSRamDonor.h
+		ios/Bridge/IOSRamDonor.mm
 		ios/Bridge/Core/IOSAccounts.cpp
 		ios/Bridge/Core/IOSCoverArt.cpp
 		ios/Bridge/Core/IOSDlcUpdateImport.cpp
