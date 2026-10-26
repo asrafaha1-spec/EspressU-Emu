@@ -23,7 +23,17 @@ jobs:
       - name: Install tools
         run: |
           brew install cmake ninja xcodegen pkg-config autoconf automake libtool
-          xcodebuild -downloadComponent MetalToolchain
+
+          # -downloadComponent only exists in Xcode 26+, so pick the newest installed Xcode first.
+          ls -d /Applications/Xcode_*.app || true
+          NEWEST="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -n "$NEWEST" ]; then sudo xcode-select -s "$NEWEST/Contents/Developer"; fi
+          xcodebuild -version
+
+          if ! xcrun -sdk iphoneos metal --version >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+          xcrun -sdk iphoneos metal --version
 
       - name: Cache vcpkg binaries
         uses: actions/cache@v4
