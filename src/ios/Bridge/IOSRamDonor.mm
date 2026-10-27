@@ -462,6 +462,15 @@ namespace IOSRamDonor
 		SetStatus("RAM donor: stopped");
 	}
 
+	void LiftOwnJetsamLimit()
+	{
+		const int result = ESPLiftJetsamLimit(6144);
+		if (result == 0)
+			SetStatus("Raised this app's memory limit to 6144 MB (jetsam limit lifted)");
+		else
+			SetStatus("Could not raise the app's memory limit: %s (needs the com.apple.private.memorystatus entitlement)", strerror(result));
+	}
+
 	size_t DonatedBytes()
 	{
 		return g_donatedBytes.load();

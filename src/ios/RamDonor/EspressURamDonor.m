@@ -16,6 +16,7 @@
 #import <os/log.h>
 #import <xpc/xpc.h>
 #import <stdlib.h>
+#import <string.h>
 #import <unistd.h>
 
 #import "ESPRamDonor.h"
@@ -74,6 +75,8 @@ static void ESPRemoveDecoderHook(void)
 __attribute__((constructor)) static void ESPRamDonorLoaded(void)
 {
     ESPInstallDecoderHook();
+    const int lifted = ESPLiftJetsamLimit(6144);
+    os_log(ESPLog(), "Raising the donor's own memory limit: %{public}s", lifted == 0 ? "ok" : strerror(lifted));
 }
 
 #pragma mark - Allocation bookkeeping

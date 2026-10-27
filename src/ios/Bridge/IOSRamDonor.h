@@ -34,6 +34,10 @@ namespace IOSRamDonor
 	// Stops every donor process. Called at emulator shutdown.
 	void Shutdown();
 
+	// Tries to raise the app's own jetsam limit (needs com.apple.private.memorystatus, e.g. TrollStore).
+	// Logs the outcome to the crash log. Safe to call without the entitlement: it just fails.
+	void LiftOwnJetsamLimit();
+
 	// Cheap, non-blocking counters for the periodic memory log line.
 	size_t DonatedBytes();
 	size_t LiveDonors();

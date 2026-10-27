@@ -12,6 +12,25 @@
 
 #pragma once
 
+#include <dlfcn.h>
+#include <errno.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <unistd.h>
+
+// Raises this process's own jetsam memory limit. Needs the private entitlement
+// com.apple.private.memorystatus (available when installed with TrollStore); without it the call is
+// refused and this returns EPERM. Returns 0 on success, otherwise an errno value.
+static inline int ESPLiftJetsamLimit(uint32_t megabytes)
+{
+    typedef int (*MemorystatusControl)(uint32_t command, int32_t pid, uint32_t flags, void *buffer, size_t size);
+    MemorystatusControl control = (MemorystatusControl)dlsym(RTLD_DEFAULT, "memorystatus_control");
+    if (!control)
+        return ENOSYS;
+    const uint32_t kMemorystatusCmdSetJetsamTaskLimit = 6;
+    return control(kMemorystatusCmdSetJetsamTaskLimit, getpid(), megabytes, NULL, 0) == 0 ? 0 : errno;
+}
+
 #define ESP_DONOR_KEY_OP        "op"
 #define ESP_DONOR_KEY_PID       "pid"
 #define ESP_DONOR_KEY_AVAILABLE "available"

@@ -180,6 +180,9 @@ MMURange mmuRange_HIGHMEM				{ 0xFFFFF000, 0x00001000, MMU_MEM_AREA_ID::CPU_PER_
 
 void memory_init()
 {
+#if BOOST_OS_IOS
+	IOSRamDonor::LiftOwnJetsamLimit();
+#endif
 	if (!memory_base)
 		memory_base = (uint8*)MemMapper::ReserveMemory(nullptr, size_t{0x100000000ULL}, MemMapper::PAGE_PERMISSION::P_RW);
 #if BOOST_OS_IOS
