@@ -8,6 +8,7 @@
 #import <xpc/xpc.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -31,8 +32,12 @@
 - (void)_setEndpoint:(xpc_endpoint_t)endpoint;
 @end
 
+extern "C" void cemu_bridge_log_checkpoint(const char* message);
+
 namespace
 {
+	std::atomic<size_t> g_donatedBytes{ 0 };
+
 	// User settings (NSUserDefaults).
 	NSString* const kEnabledKey = @"espressu.ramDonor.enabled";     // default: on
 	NSString* const kMaxDonorsKey = @"espressu.ramDonor.maxDonors"; // default: 4
@@ -86,6 +91,10 @@ namespace
 			g_status = buffer;
 		}
 		NSLog(@"[RamDonor] %s", buffer);
+		// Also into CemuCrashLog.txt, so a device log shows what the donors did.
+		char line[300];
+		snprintf(line, sizeof(line), "RAMDONOR: %s", buffer);
+		cemu_bridge_log_checkpoint(line);
 	}
 
 	NSString* DonorIdentifier()
@@ -343,6 +352,7 @@ namespace
 		vm_protect(mach_task_self(), destination, length, FALSE, VM_PROT_READ | VM_PROT_WRITE);
 
 		g_chunks.push_back({ target, length, donorIndex, chunkId });
+		g_donatedBytes += length;
 		std::lock_guard<std::mutex> lock(g_stateMutex);
 		g_donors[donorIndex].available = g_donors[donorIndex].available > length ? g_donors[donorIndex].available - length : 0;
 		return length;
@@ -414,6 +424,7 @@ namespace IOSRamDonor
 				}
 				if (alive)
 					SendFree(donor, it->chunkId);
+				g_donatedBytes -= it->length;
 				it = g_chunks.erase(it);
 			}
 			else
@@ -442,12 +453,23 @@ namespace IOSRamDonor
 		g_extensions.clear();
 		g_requestIds.clear();
 		g_chunks.clear();
+		g_donatedBytes = 0;
 		if (g_listener)
 		{
 			xpc_connection_cancel(g_listener);
 			g_listener = nullptr;
 		}
 		SetStatus("RAM donor: stopped");
+	}
+
+	size_t DonatedBytes()
+	{
+		return g_donatedBytes.load();
+	}
+
+	size_t LiveDonors()
+	{
+		return LiveDonorCount();
 	}
 
 	const char* StatusLine()

@@ -34,6 +34,10 @@ namespace IOSRamDonor
 	// Stops every donor process. Called at emulator shutdown.
 	void Shutdown();
 
+	// Cheap, non-blocking counters for the periodic memory log line.
+	size_t DonatedBytes();
+	size_t LiveDonors();
+
 	// Human readable one-line state for logs and the diagnostics screen.
 	const char* StatusLine();
 }

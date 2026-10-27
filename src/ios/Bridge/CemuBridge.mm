@@ -2,6 +2,7 @@
 #include "audio/IAudioAPI.h"
 #include <cxxabi.h>
 #include <typeinfo>
+#include "IOSRamDonor.h"
 #import "CemuBridge.h"
 #import "IOSLiveLog.h"
 #import "IOSMotion.h"
@@ -583,6 +584,11 @@ namespace {
         if (n > 0 && n < (int)sizeof(line))
         {
             int m = snprintf(line + n, sizeof(line) - n, " | address space reserved %llu MB", (unsigned long long)(cemu_mem_virtual_bytes() / (1024ull * 1024ull)));
+            if (m > 0) n += m;
+        }
+        if (n > 0 && n < (int)sizeof(line) && IOSRamDonor::DonatedBytes() > 0)
+        {
+            int m = snprintf(line + n, sizeof(line) - n, " | donors: %zu live, %zu MB donated", IOSRamDonor::LiveDonors(), IOSRamDonor::DonatedBytes() / (1024u * 1024u));
             if (m > 0) n += m;
         }
         auto& w = LatteWait::Get();
