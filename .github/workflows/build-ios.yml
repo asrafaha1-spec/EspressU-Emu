@@ -72,20 +72,15 @@ jobs:
           rm -rf Payload && mkdir Payload && cp -R "$APP" Payload/
           zip -qry EspressU.ipa Payload
 
-      - name: Package TrollStore build (fake-signed with entitlements)
+      - name: Package TrollStore variants (fake-signed with increasing entitlements)
         run: |
           brew install ldid
-          rm -rf TS && mkdir TS && cp -R Payload TS/Payload
-          APP=TS/Payload/EspressU.app
-          ldid -Ssrc/ios/TrollStore.entitlements "$APP/EspressU"
-          ldid -Ssrc/ios/RamDonor/TrollStore.entitlements "$APP/PlugIns/EspressURamDonor.appex/EspressURamDonor"
-          ldid -e "$APP/EspressU" | grep -c memorystatus
-          (cd TS && zip -qry ../EspressU-TrollStore.tipa Payload)
+          ci/make-trollstore-variants.sh . trollstore-variants
 
       - uses: actions/upload-artifact@v4
         with:
-          name: EspressU-TrollStore-tipa
-          path: EspressU-TrollStore.tipa
+          name: EspressU-TrollStore-variants
+          path: trollstore-variants/
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
