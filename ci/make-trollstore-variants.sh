@@ -6,9 +6,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC="$1"
-OUT="$2"
-mkdir -p "$OUT"
+mkdir -p "$2"
+# Absolute paths: build_variant changes directory before it zips.
+SRC="$(cd "$1" && pwd)"
+OUT="$(cd "$2" && pwd)"
 
 write_entitlements() { # <file> <keys...>
   local file="$1"; shift
