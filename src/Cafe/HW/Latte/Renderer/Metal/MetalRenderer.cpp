@@ -1,6 +1,7 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
 #if BOOST_OS_IOS
 #include <os/proc.h>
+#include "ios/Bridge/IOSRamDonor.h"
 #include <sys/sysctl.h>
 #endif
 #include "Cafe/HW/Latte/Renderer/Metal/MetalVoidVertexPipeline.h"
@@ -3714,7 +3715,7 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
     w.memStatsValid.store(true, std::memory_order_relaxed);
 
 #if BOOST_OS_IOS
-    const uint64 available = os_proc_available_memory();
+    const uint64 available = IOSRamDonor::AvailableMemory();
     if (m_startAvailableMemory == 0)
         m_startAvailableMemory = available;
     uint64 lowMark, criticalMark;
@@ -3781,7 +3782,7 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
     {
         w.texturesEvicted.fetch_add(deleted, std::memory_order_relaxed);
         if (m_memoryPressureLogs++ < 12)
-            cemuLog_log(LogType::Force, "Metal: memory is low ({} MB left), deleted {} unused textures (about {} MB)", os_proc_available_memory() / MB, deleted, freedBytes / MB);
+            cemuLog_log(LogType::Force, "Metal: memory is low ({} MB left), deleted {} unused textures (about {} MB)", IOSRamDonor::AvailableMemory() / MB, deleted, freedBytes / MB);
     }
     if (evictionRequested)
         w.evictionPasses.fetch_add(1);

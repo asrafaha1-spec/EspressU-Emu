@@ -2,6 +2,7 @@
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h"
 #if BOOST_OS_IOS
 #include <os/proc.h>
+#include "ios/Bridge/IOSRamDonor.h"
 #endif
 #include <imgui.h>
 
@@ -584,7 +585,7 @@ VkImageMemAllocation* VKRMemoryManager::imageMemoryAllocate(VkImage image)
 			itr.second->getStatistics(heapSize, allocatedBytes);
 			used += allocatedBytes;
 		}
-		const bool lowOnMemory = os_proc_available_memory() < (size_t)(384ull * 1024 * 1024);
+		const bool lowOnMemory = IOSRamDonor::AvailableMemory() < (size_t)(384ull * 1024 * 1024);
 		if ((budget > 0 && used + allocationSize > budget) || lowOnMemory)
 		{
 			std::vector<LatteTexture*> deleteableTextures = LatteTC_GetDeleteableTextures();

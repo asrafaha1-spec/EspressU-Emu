@@ -22,6 +22,7 @@
 #include <TargetConditionals.h>
 #if TARGET_OS_IPHONE
 #include <os/proc.h>
+#include "ios/Bridge/IOSRamDonor.h"
 #endif
 #include <condition_variable>
 #include <chrono>
@@ -54,7 +55,7 @@ namespace
 			bool waited = false;
 			for (;;)
 			{
-				const uint64 available = (uint64)os_proc_available_memory();
+				const uint64 available = (uint64)IOSRamDonor::AvailableMemory();
 				const uint32 allowed = available == 0 ? UINT32_MAX : (available < kCompileMemoryCritical ? 1 : (available < kCompileMemoryLow ? 2 : UINT32_MAX));
 				if (s_compilesRunning < allowed)
 					break;
@@ -1002,7 +1003,7 @@ void MetalPipelineCache::OpenBinaryArchives(uint64 cacheTitleId)
 		bool skip = sizeEc || size == 0 || size > ARCHIVE_MAX_BYTES;
 #if TARGET_OS_IPHONE
 		// opening maps the file and Metal may allocate more on top, keep a safe margin
-		if (!skip && (uint64)os_proc_available_memory() < size * 3 + 256ull * 1024 * 1024)
+		if (!skip && (uint64)IOSRamDonor::AvailableMemory() < size * 3 + 256ull * 1024 * 1024)
 			skip = true;
 #endif
 		if (skip)

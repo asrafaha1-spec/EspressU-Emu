@@ -687,7 +687,7 @@ static std::string ios_report_device_text()
     text += fmt::format("System: {} | uptime {:.0f} min | low power mode {} | thermal {}\n",
         [process.operatingSystemVersionString UTF8String], process.systemUptime / 60.0, process.lowPowerModeEnabled ? "ON" : "off", thermalNames[thermal]);
     text += fmt::format("Memory: {} MB physical, {} MB available to EspressU right now, {} MB in use\n",
-        process.physicalMemory / (1024ull * 1024ull), (uint64_t)os_proc_available_memory() / (1024ull * 1024ull), cemu_mem_footprint_bytes() / (1024ull * 1024ull));
+        process.physicalMemory / (1024ull * 1024ull), (uint64_t)IOSRamDonor::AvailableMemory() / (1024ull * 1024ull), cemu_mem_footprint_bytes() / (1024ull * 1024ull));
     text += fmt::format("Processors: {} active of {}\n", (uint64_t)process.activeProcessorCount, (uint64_t)process.processorCount);
     text += cemu_bridge_device_report();
     text += "\n";
@@ -705,7 +705,7 @@ size_t PPCRecompiler_getJitArenaUsed();
 
 const char* cemu_bridge_memory_headroom_summary(void) {
     static thread_local std::string summary;
-    const uint64_t avail = (uint64_t)os_proc_available_memory();
+    const uint64_t avail = (uint64_t)IOSRamDonor::AvailableMemory();
     const uint64_t arena = (uint64_t)PPCRecompiler_getJitArenaSize();
 
     char buf[256];
@@ -726,7 +726,7 @@ const char* cemu_bridge_memory_headroom_summary(void) {
 }
 
 bool cemu_bridge_memory_status(unsigned long long* availableBytes, unsigned long long* footprintBytes) {
-    const uint64_t avail = (uint64_t)os_proc_available_memory();
+    const uint64_t avail = (uint64_t)IOSRamDonor::AvailableMemory();
     const uint64_t foot = cemu_mem_footprint_bytes();
     if (availableBytes) *availableBytes = (unsigned long long)avail;
     if (footprintBytes) *footprintBytes = (unsigned long long)foot;
@@ -1492,7 +1492,7 @@ namespace {
             window.metalGpuBusyPct = mtlBusy * 100.0;
             window.thermal = thermal;
             window.bottleneck = verdict;
-            window.availableMB = (uint64_t)os_proc_available_memory() / (1024ull * 1024ull);
+            window.availableMB = (uint64_t)IOSRamDonor::AvailableMemory() / (1024ull * 1024ull);
             window.footprintMB = cemu_mem_footprint_bytes() / (1024ull * 1024ull);
             IOSReport_NotePerfWindow(window);
         }
@@ -1761,7 +1761,7 @@ namespace {
         s.gpuPresumedLost = w.gpuPresumedLost.load();
         s.waitClass = w.reason.load() ? (StallDetect::WaitClass)w.reasonKind.load() : StallDetect::WaitClass::None;
         static uint64_t s_memLimitBytes = 0;
-        const uint64_t availBytes = (uint64_t)os_proc_available_memory();
+        const uint64_t availBytes = (uint64_t)IOSRamDonor::AvailableMemory();
         if (availBytes != 0)
         {
             uint64_t limit = availBytes + cemu_mem_footprint_bytes();
@@ -3572,7 +3572,7 @@ static CemuBridgeStatus ios_boot_prepared_title(int prepared) {
 
     {
         const uint64_t needed = DeviceCaps::GetBudgets().minBootHeadroomBytes;
-        const uint64_t available = (uint64_t)os_proc_available_memory();
+        const uint64_t available = (uint64_t)IOSRamDonor::AvailableMemory();
         if (needed != 0 && available != 0 && available < needed)
         {
             char message[512];

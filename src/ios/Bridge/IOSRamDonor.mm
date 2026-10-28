@@ -37,6 +37,36 @@ extern "C" void cemu_bridge_log_checkpoint(const char* message);
 namespace
 {
 	std::atomic<size_t> g_donatedBytes{ 0 };
+	std::atomic<bool> g_limitLifted{ false };
+	std::atomic<uint64_t> g_originalLimit{ 0 }; // what iOS reported before the lift (available + footprint)
+	std::atomic<bool> g_loggedPastOriginal{ false };
+
+	NSString* const kMemoryCapKey = @"espressu.ramDonor.memoryCapMB"; // default: 3584
+	constexpr uint64_t kDefaultMemoryCapMB = 3584;
+	constexpr uint64_t kMinMemoryCapMB = 1024;
+
+	uint64_t OwnFootprintBytes()
+	{
+		task_vm_info_data_t info{};
+		mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+		if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) != KERN_SUCCESS)
+			return 0;
+		return (uint64_t)info.phys_footprint;
+	}
+
+	uint64_t MemoryCapBytes()
+	{
+		static uint64_t cap = []() -> uint64_t {
+			NSInteger mb = [[NSUserDefaults standardUserDefaults] integerForKey:kMemoryCapKey];
+			uint64_t value = mb > 0 ? (uint64_t)mb : kDefaultMemoryCapMB;
+			if (value < kMinMemoryCapMB)
+				value = kMinMemoryCapMB;
+			if (value > 6144)
+				value = 6144;
+			return value << 20;
+		}();
+		return cap;
+	}
 
 	// User settings (NSUserDefaults).
 	NSString* const kEnabledKey = @"espressu.ramDonor.enabled";     // default: on
@@ -466,9 +496,27 @@ namespace IOSRamDonor
 	{
 		const int result = ESPLiftJetsamLimit(6144);
 		if (result == 0)
-			SetStatus("Raised this app's memory limit to 6144 MB (jetsam limit lifted)");
+		{
+			g_originalLimit = (uint64_t)os_proc_available_memory() + OwnFootprintBytes();
+			g_limitLifted = true;
+			SetStatus("Raised this app's memory limit to 6144 MB (jetsam limit lifted); the app budgets memory up to %llu MB", (unsigned long long)(MemoryCapBytes() >> 20));
+		}
 		else
 			SetStatus("Could not raise the app's memory limit: %s (needs the com.apple.private.memorystatus entitlement)", strerror(result));
+	}
+
+	uint64_t AvailableMemory()
+	{
+		const uint64_t raw = (uint64_t)os_proc_available_memory();
+		if (!g_limitLifted.load(std::memory_order_relaxed))
+			return raw;
+		const uint64_t footprint = OwnFootprintBytes();
+		const uint64_t original = g_originalLimit.load();
+		if (original != 0 && footprint > original && !g_loggedPastOriginal.exchange(true))
+			SetStatus("Footprint %llu MB passed the original iOS limit of %llu MB and the app is still running: the lift is working",
+				(unsigned long long)(footprint >> 20), (unsigned long long)(original >> 20));
+		const uint64_t cap = MemoryCapBytes();
+		return footprint < cap ? cap - footprint : 1;
 	}
 
 	size_t DonatedBytes()

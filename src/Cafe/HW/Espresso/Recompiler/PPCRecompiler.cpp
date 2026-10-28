@@ -31,6 +31,7 @@
 #include <libkern/OSCacheControl.h>
 #if BOOST_OS_IOS
 #include <os/proc.h>
+#include "ios/Bridge/IOSRamDonor.h"
 #endif
 #include <stdio.h>
 #include <dlfcn.h>
@@ -1514,7 +1515,7 @@ bool PPCRecompiler_Init26() {
         while (firstCandidate + 1 < std::size(kArenaSizes) && kArenaSizes[firstCandidate] > arenaStart)
             firstCandidate++;
 #if BOOST_OS_IOS
-        const uint64 availableBytes = os_proc_available_memory();
+        const uint64 availableBytes = IOSRamDonor::AvailableMemory();
         if (availableBytes != 0)
         {
             const size_t budget = (size_t)(availableBytes / 8);

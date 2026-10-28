@@ -38,6 +38,12 @@ namespace IOSRamDonor
 	// Logs the outcome to the crash log. Safe to call without the entitlement: it just fails.
 	void LiftOwnJetsamLimit();
 
+	// How much more memory this process may use. Same meaning as os_proc_available_memory(), but when the
+	// jetsam limit was lifted it is measured against our own ceiling (default 3584 MB, setting
+	// espressu.ramDonor.memoryCapMB) instead of the stale launch-time limit iOS keeps reporting.
+	// Never returns 0 once the limit is lifted (callers treat 0 as "unknown").
+	uint64_t AvailableMemory();
+
 	// Cheap, non-blocking counters for the periodic memory log line.
 	size_t DonatedBytes();
 	size_t LiveDonors();

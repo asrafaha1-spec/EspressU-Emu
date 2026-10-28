@@ -10,6 +10,7 @@
 #include <mutex>
 #if BOOST_OS_IOS
 #include <os/proc.h>
+#include "ios/Bridge/IOSRamDonor.h"
 #endif
 
 namespace MetalFaultHistory
@@ -95,7 +96,7 @@ namespace MetalFaultHistory
 			std::strftime(when, sizeof(when), "%Y-%m-%d %H:%M:%S", &local);
 		uint64_t availableMB = 0;
 #if BOOST_OS_IOS
-		availableMB = (uint64_t)os_proc_available_memory() / (1024 * 1024);
+		availableMB = (uint64_t)IOSRamDonor::AvailableMemory() / (1024 * 1024);
 #endif
 		std::string line = fmt::format("{} | title {:016x} | {} | {}", when, CafeSystem::GetForegroundTitleId(), KindName(kind), detail);
 		if (wantedBytes)

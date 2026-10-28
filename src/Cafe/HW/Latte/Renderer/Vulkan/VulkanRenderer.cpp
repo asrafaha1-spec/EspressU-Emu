@@ -35,6 +35,7 @@
 #include <cstdlib>
 #if BOOST_OS_IOS
 #include <os/proc.h>
+#include "ios/Bridge/IOSRamDonor.h"
 #endif
 #include <thread>
 #include <chrono>
@@ -2219,7 +2220,7 @@ void VulkanRenderer::QueryMemoryInfo()
 			if (memProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
 				heapBytes = std::max<uint64>(heapBytes, memProperties.memoryHeaps[i].size);
 		uint64 limitBytes = heapBytes;
-		const uint64 processAvailable = (uint64)os_proc_available_memory();
+		const uint64 processAvailable = (uint64)IOSRamDonor::AvailableMemory();
 		if (processAvailable > 0)
 			limitBytes = limitBytes ? std::min(limitBytes, processAvailable) : processAvailable;
 		uint64 driverBudget = 0;

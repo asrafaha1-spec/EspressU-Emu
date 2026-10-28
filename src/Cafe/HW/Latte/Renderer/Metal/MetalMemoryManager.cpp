@@ -15,6 +15,7 @@
 #include <cstring>
 #if BOOST_OS_IOS
 #include <os/proc.h>
+#include "ios/Bridge/IOSRamDonor.h"
 #endif
 
 MetalMemoryManager::~MetalMemoryManager()
@@ -452,7 +453,7 @@ void MetalMemoryManager::InitBufferCache(size_t size)
     if (deviceMaxLength != 0 && attemptSize > deviceMaxLength)
         attemptSize = deviceMaxLength & ~(MB - 1);
 #if BOOST_OS_IOS
-    const size_t availableMemory = static_cast<size_t>(os_proc_available_memory());
+    const size_t availableMemory = static_cast<size_t>(IOSRamDonor::AvailableMemory());
     if (availableMemory != 0)
         attemptSize = std::min(attemptSize, std::max(availableMemory / 3, MIN_BUFFER_CACHE_SIZE) & ~(MB - 1));
 #endif
