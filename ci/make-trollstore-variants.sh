@@ -35,20 +35,23 @@ build_variant() { # <name> <app entitlements file> <extension entitlements file>
 }
 
 TMP="$(mktemp -d)"
-JIT=dynamic-codesigning
+# dynamic-codesigning is deliberately left out: with it TrollStore installs the app but iOS 16.3.1 refuses
+# to launch it ("Failed to Open"). JIT is enabled by the attached enabler instead.
 MEM1=com.apple.developer.kernel.increased-memory-limit
 MEM2=com.apple.developer.kernel.extended-virtual-addressing
+STATUS=com.apple.private.memorystatus
 
 write_entitlements "$TMP/app1.plist" get-task-allow
 write_entitlements "$TMP/ext1.plist" get-task-allow
-write_entitlements "$TMP/app2.plist" get-task-allow $JIT
-write_entitlements "$TMP/app3.plist" get-task-allow $JIT $MEM1 $MEM2
-write_entitlements "$TMP/ext3.plist" get-task-allow $MEM1
+write_entitlements "$TMP/app2.plist" get-task-allow $MEM1
+write_entitlements "$TMP/ext2.plist" get-task-allow $MEM1
+write_entitlements "$TMP/app3.plist" get-task-allow $MEM1 $MEM2
+write_entitlements "$TMP/app4.plist" get-task-allow $MEM1 $MEM2 $STATUS
+write_entitlements "$TMP/ext4.plist" get-task-allow $MEM1 $STATUS
 
-build_variant ts1-basic  "$TMP/app1.plist" "$TMP/ext1.plist"
-build_variant ts2-jit    "$TMP/app2.plist" "$TMP/ext1.plist"
-build_variant ts3-memory "$TMP/app3.plist" "$TMP/ext3.plist"
-# Everything, including the private memorystatus entitlement (the repo's TrollStore entitlement files).
-build_variant ts4-full   "$ROOT/src/ios/TrollStore.entitlements" "$ROOT/src/ios/RamDonor/TrollStore.entitlements"
+build_variant ts1-basic       "$TMP/app1.plist" "$TMP/ext1.plist"   # known to launch
+build_variant ts2-memlimit    "$TMP/app2.plist" "$TMP/ext2.plist"   # + increased-memory-limit
+build_variant ts3-memvirtual  "$TMP/app3.plist" "$TMP/ext2.plist"   # + extended-virtual-addressing
+build_variant ts4-memstatus   "$TMP/app4.plist" "$TMP/ext4.plist"   # + com.apple.private.memorystatus
 
 ls -l "$OUT"
