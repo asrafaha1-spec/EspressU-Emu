@@ -147,6 +147,7 @@ struct HomeMenuOverlay: View {
     let canQuit: Bool
     let touchControlsHidden: Bool?
     let offersEmulatedDevices: Bool
+    var swapTitle: String = "Swap TV and GamePad"
     let actions: HomeMenuActions
 
     private enum Page { case root, layout, confirmQuit }
@@ -305,8 +306,8 @@ struct HomeMenuOverlay: View {
             }
         }
         if isDualScreen || screenLayout == .singleScreen {
-            result.append(HomeMenuRow(id: "swap", title: "Swap TV and GamePad", symbol: "rectangle.2.swap",
-                                      hint: "Switches which Wii U screen is shown.", action: actions.swapScreens))
+            result.append(HomeMenuRow(id: "swap", title: swapTitle, symbol: "rectangle.2.swap",
+                                      hint: "Switches which Wii U screen is shown and returns to the game.", action: actions.swapScreens))
         }
         result.append(HomeMenuRow(id: "back", title: "Back", symbol: "chevron.left",
                                   hint: "Returns to the HOME menu.", showsChevron: false, action: { show(.root) }))

@@ -1563,6 +1563,20 @@ struct EmulatorViewOptimized: View {
         } else {
             localSwapped.toggle()
         }
+        // The game is paused while the menu is open, so the new screen would not show until resume.
+        if showHomeMenu { closeHomeMenu() }
+    }
+
+    /// Name of the swap action, saying which screen it will bring up.
+    private var quickSwapTitle: String {
+        if displayRouter.placement == .dualScreen { return "Swap TV and GamePad" }
+        return localSwapped ? "Show TV screen" : "Show GamePad screen"
+    }
+
+    /// The swap button next to pause: the same switch as the menu entry, one tap away.
+    private var offersQuickScreenSwap: Bool {
+        if displayRouter.placement == .dualScreen { return showSwapButton }
+        return screenLayout == .singleScreen && showLocalSwapButton
     }
 
     private func handleHomeMenuEvent(_ event: HomeMenuEvent) {
@@ -1597,6 +1611,7 @@ struct EmulatorViewOptimized: View {
             canQuit: true,
             touchControlsHidden: isPadViewVisible ? padHidden : nil,
             offersEmulatedDevices: anyEmulatedDeviceEnabled,
+            swapTitle: quickSwapTitle,
             actions: HomeMenuActions(
                 resume: closeHomeMenu,
                 moveControls: moveControlsFromHomeMenu,
@@ -1699,6 +1714,12 @@ struct EmulatorViewOptimized: View {
                             InGamePillButton(symbol: isPaused ? "play.fill" : "pause.fill", title: nil, action: togglePause)
                                 .disabled(gameManager.emulationState != .running)
                                 .accessibilityLabel(isPaused ? "Resume" : "Pause")
+                            if offersQuickScreenSwap {
+                                InGamePillButton(symbol: "rectangle.2.swap", title: isPhonePortrait ? nil : quickSwapTitle,
+                                                 action: swapScreensFromHomeMenu)
+                                    .disabled(gameManager.emulationState != .running || showHomeMenu)
+                                    .accessibilityLabel(quickSwapTitle)
+                            }
                         }
                     }
                     .padding(4)
