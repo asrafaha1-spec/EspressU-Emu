@@ -1,8 +1,8 @@
 #!/bin/bash
-# Builds several TrollStore .tipa variants from an unsigned Payload/, each with more entitlements than
-# the last, so that a "Failed to Open" after installing can be traced to the first entitlement that breaks it.
+# Builds the TrollStore .tipa (EspressU-TrollStore.tipa) from an unsigned Payload/, fake-signed with the
+# entitlements the RAM donor needs (increased memory limit, extended virtual addressing, memorystatus).
 #
-#   ci/make-trollstore-variants.sh <dir containing Payload/> <output dir>
+#   ci/make-trollstore.sh <dir containing Payload/> <output dir>
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -41,17 +41,9 @@ MEM1=com.apple.developer.kernel.increased-memory-limit
 MEM2=com.apple.developer.kernel.extended-virtual-addressing
 STATUS=com.apple.private.memorystatus
 
-write_entitlements "$TMP/app1.plist" get-task-allow
-write_entitlements "$TMP/ext1.plist" get-task-allow
-write_entitlements "$TMP/app2.plist" get-task-allow $MEM1
-write_entitlements "$TMP/ext2.plist" get-task-allow $MEM1
-write_entitlements "$TMP/app3.plist" get-task-allow $MEM1 $MEM2
-write_entitlements "$TMP/app4.plist" get-task-allow $MEM1 $MEM2 $STATUS
-write_entitlements "$TMP/ext4.plist" get-task-allow $MEM1 $STATUS
+write_entitlements "$TMP/app.plist" get-task-allow $MEM1 $MEM2 $STATUS
+write_entitlements "$TMP/ext.plist" get-task-allow $MEM1 $STATUS
 
-build_variant ts1-basic       "$TMP/app1.plist" "$TMP/ext1.plist"   # known to launch
-build_variant ts2-memlimit    "$TMP/app2.plist" "$TMP/ext2.plist"   # + increased-memory-limit
-build_variant ts3-memvirtual  "$TMP/app3.plist" "$TMP/ext2.plist"   # + extended-virtual-addressing
-build_variant ts4-memstatus   "$TMP/app4.plist" "$TMP/ext4.plist"   # + com.apple.private.memorystatus
+build_variant TrollStore "$TMP/app.plist" "$TMP/ext.plist"
 
 ls -l "$OUT"

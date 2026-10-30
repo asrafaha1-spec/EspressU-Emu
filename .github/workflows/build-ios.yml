@@ -65,26 +65,19 @@ jobs:
           xcodebuild -project EspressU.xcodeproj -scheme EspressU -sdk iphoneos -configuration Release \
             -derivedDataPath "$GITHUB_WORKSPACE/build-xcode" CODE_SIGNING_ALLOWED=NO build
 
-      - name: Package IPA
+      - name: Package app payload
         run: |
           APP="$(find build-xcode/Build/Products -maxdepth 2 -name EspressU.app | head -1)"
           test -d "$APP/PlugIns/EspressURamDonor.appex" || { echo "RAM donor extension missing from the app"; exit 1; }
           rm -rf Payload && mkdir Payload && cp -R "$APP" Payload/
-          zip -qry EspressU.ipa Payload
 
-      - name: Package TrollStore variants (fake-signed with increasing entitlements)
+      - name: Package TrollStore build (fake-signed)
         run: |
           brew install ldid
-          ci/make-trollstore-variants.sh . trollstore-variants
+          ci/make-trollstore.sh . trollstore
 
       - uses: actions/upload-artifact@v4
         with:
-          name: EspressU-TrollStore-variants
-          path: trollstore-variants/
-          if-no-files-found: error
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: EspressU-unsigned-ipa
-          path: EspressU.ipa
+          name: EspressU-TrollStore
+          path: trollstore/
           if-no-files-found: error
