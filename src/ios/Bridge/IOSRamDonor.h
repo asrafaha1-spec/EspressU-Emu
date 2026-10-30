@@ -39,8 +39,8 @@ namespace IOSRamDonor
 	void LiftOwnJetsamLimit();
 
 	// How much more memory this process may use. Same meaning as os_proc_available_memory(), but when the
-	// jetsam limit was lifted it is measured against our own ceiling (default 3584 MB, setting
-	// espressu.ramDonor.memoryCapMB) instead of the stale launch-time limit iOS keeps reporting.
+	// jetsam limit was lifted it is measured against our own ceiling (default 3072 MB, setting
+	// espressu.ramDonor.memoryCapMB) covering this app plus its donors instead of the stale launch-time limit iOS keeps reporting.
 	// Never returns 0 once the limit is lifted (callers treat 0 as "unknown").
 	uint64_t AvailableMemory();
 

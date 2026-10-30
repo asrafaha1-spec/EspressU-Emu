@@ -149,12 +149,12 @@ extension EspressUSettingsView {
             SettingsItem(id: "ram.prefault", title: "Fill donor memory up front",
                          detail: "Touches all donated memory when a game starts, so you can see what it really costs. Slower to start. Applies the next time a game starts.",
                          control: .toggle(values.bool("espressu.ramDonor.prefault", false))),
-            SettingsItem(id: "ram.cap", title: "Memory ceiling",
-                         detail: "Only used when iOS allowed this app a higher memory limit (TrollStore). EspressU frees textures and warns before use reaches this. Too high and iOS may close the app without warning. Applies the next time EspressU starts.",
+            SettingsItem(id: "ram.cap", title: "Total memory ceiling",
+                         detail: "Only used when iOS allowed this app a higher memory limit (TrollStore). Counts EspressU plus its RAM donors together. EspressU frees textures and warns before use reaches this. Too high and iOS may close the app without warning. Applies the next time EspressU starts.",
                          control: .choice([SettingsOption(id: "2560", title: "2.5 GB"),
                                            SettingsOption(id: "3072", title: "3 GB"),
                                            SettingsOption(id: "3584", title: "3.5 GB")],
-                                          values.intChoice("espressu.ramDonor.memoryCapMB", 3584))),
+                                          values.intChoice("espressu.ramDonor.memoryCapMB", 3072))),
         ]
 
         return [

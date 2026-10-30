@@ -41,8 +41,8 @@ namespace
 	std::atomic<uint64_t> g_originalLimit{ 0 }; // what iOS reported before the lift (available + footprint)
 	std::atomic<bool> g_loggedPastOriginal{ false };
 
-	NSString* const kMemoryCapKey = @"espressu.ramDonor.memoryCapMB"; // default: 3584
-	constexpr uint64_t kDefaultMemoryCapMB = 3584;
+	NSString* const kMemoryCapKey = @"espressu.ramDonor.memoryCapMB"; // default: 3072 (this app plus its donors)
+	constexpr uint64_t kDefaultMemoryCapMB = 3072;
 	constexpr uint64_t kMinMemoryCapMB = 1024;
 
 	uint64_t OwnFootprintBytes()
@@ -499,7 +499,7 @@ namespace IOSRamDonor
 		{
 			g_originalLimit = (uint64_t)os_proc_available_memory() + OwnFootprintBytes();
 			g_limitLifted = true;
-			SetStatus("Raised this app's memory limit to 6144 MB (jetsam limit lifted); the app budgets memory up to %llu MB", (unsigned long long)(MemoryCapBytes() >> 20));
+			SetStatus("Raised this app's memory limit to 6144 MB (jetsam limit lifted); the app and its donors budget memory up to %llu MB in total", (unsigned long long)(MemoryCapBytes() >> 20));
 		}
 		else
 			SetStatus("Could not raise the app's memory limit: %s (needs the com.apple.private.memorystatus entitlement)", strerror(result));
@@ -515,8 +515,11 @@ namespace IOSRamDonor
 		if (original != 0 && footprint > original && !g_loggedPastOriginal.exchange(true))
 			SetStatus("Footprint %llu MB passed the original iOS limit of %llu MB and the app is still running: the lift is working",
 				(unsigned long long)(footprint >> 20), (unsigned long long)(original >> 20));
+		// Donor memory is real RAM too: iOS kills for lack of physical memory when this app plus its donors
+		// outgrow the phone, so the ceiling covers both.
+		const uint64_t total = footprint + (uint64_t)g_donatedBytes.load();
 		const uint64_t cap = MemoryCapBytes();
-		return footprint < cap ? cap - footprint : 1;
+		return total < cap ? cap - total : 1;
 	}
 
 	size_t DonatedBytes()
