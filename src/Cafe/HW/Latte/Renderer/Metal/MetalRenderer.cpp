@@ -1,6 +1,7 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
 #if BOOST_OS_IOS
 #include <os/proc.h>
+#include <CoreFoundation/CoreFoundation.h>
 #include "ios/Bridge/IOSRamDonor.h"
 #include <sys/sysctl.h>
 #endif
@@ -3696,6 +3697,11 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
     w.memHostMappedMB.store((uint32)(m_memoryManager->GetHostAllocationSize() / MB), std::memory_order_relaxed);
 
     static std::chrono::steady_clock::time_point s_lastTextureStats;
+    [[maybe_unused]] static uint64 s_lastTextureBytes = 0;
+#if BOOST_OS_IOS
+    // Texture memory budget (Settings > Memory). 0 turns the budget off. Re-read with every texture count.
+    static uint64 s_textureBudgetBytes = 384 * MB;
+#endif
     if (evictionRequested || now - s_lastTextureStats >= std::chrono::seconds(2))
     {
         s_lastTextureStats = now;
@@ -3711,6 +3717,12 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
         }
         w.memTextureCount.store(textureCount, std::memory_order_relaxed);
         w.memTextureMB.store((uint32)(textureBytes / MB), std::memory_order_relaxed);
+        s_lastTextureBytes = textureBytes;
+#if BOOST_OS_IOS
+        Boolean budgetSet = false;
+        const CFIndex budgetMB = CFPreferencesGetAppIntegerValue(CFSTR("espressu.render.textureBudgetMB"), kCFPreferencesCurrentApplication, &budgetSet);
+        s_textureBudgetBytes = budgetSet ? (uint64)std::max<CFIndex>(budgetMB, 0) * MB : 384 * MB;
+#endif
     }
     w.memStatsValid.store(true, std::memory_order_relaxed);
 
@@ -3727,16 +3739,30 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
         cemuLog_log(LogType::Force, "Metal: {} memory headroom ({} MB free at the first frame): dropping cheap textures below {} MB free, all idle ones below {} MB",
             smallHeadroom ? "small" : "standard", m_startAvailableMemory / MB, lowMark / MB, criticalMark / MB);
     }
-    if (!evictionRequested && available >= lowMark)
+    const bool memoryLow = evictionRequested || available < lowMark;
+    const bool overBudget = s_textureBudgetBytes != 0 && s_lastTextureBytes > s_textureBudgetBytes;
+    if (!memoryLow && !overBudget)
         return;
+    const uint64 budgetExcess = overBudget ? s_lastTextureBytes - s_textureBudgetBytes : 0;
 
+    // Least recently used first, so the textures a game is about to draw again are the last to go.
     std::vector<LatteTexture*> candidates = LatteTC_GetDeleteableTextures();
+    std::stable_sort(candidates.begin(), candidates.end(), [](const LatteTexture* l, const LatteTexture* r) {
+        return l->lastAccessFrameCount < r->lastAccessFrameCount;
+    });
+    const uint32 budgetFrame = LatteGPUState.frameCounter;
     uint32 deleted = 0;
     uint64 freedBytes = 0;
     for (LatteTexture* texture : candidates)
     {
         if (deleted >= 200)
             break;
+        if (!memoryLow)
+        {
+            // Over the texture budget only: stop once back under it, and leave anything used in the last two seconds' worth of frames.
+            if (freedBytes >= budgetExcess || (budgetFrame - texture->lastAccessFrameCount) < 120)
+                break;
+        }
         const auto& live = LatteTexture::GetAllTextures();
         if (std::find(live.begin(), live.end(), texture) == live.end())
             continue;
@@ -3745,6 +3771,7 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
         LatteTexture_Delete(texture);
         ++deleted;
     }
+    s_lastTextureBytes = s_lastTextureBytes > freedBytes ? s_lastTextureBytes - freedBytes : 0;
     if (available < criticalMark)
     {
         const uint64 needed = lowMark > available ? lowMark - available : 0;
