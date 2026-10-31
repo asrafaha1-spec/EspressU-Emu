@@ -13,6 +13,10 @@
 
 #include "input/InputManager.h"
 #include "util/SystemInfo/SystemInfo.h"
+#if BOOST_OS_IOS
+#include "ios/Bridge/IOSRamDonor.h"
+#include <mach/mach.h>
+#endif
 
 #include <cinttypes>
 #if BOOST_OS_IOS
@@ -39,6 +43,10 @@ struct OverlayStats
 	float cpu_usage{};
 	std::vector<float> cpu_per_core;
 	uint32 ram_usage{};
+	uint32 ram_footprint{}; // memory iOS counts for this app (MB)
+	uint32 donor_held{}; // memory the donor processes report holding (MB)
+	uint32 donor_donated{}; // guest memory mapped from donors (MB)
+	uint32 donor_live{};
 
 	int vramUsage{}, vramTotal{};
 } g_state{};
@@ -128,7 +136,14 @@ void LatteOverlay_renderOverlay(ImVec2& position, ImVec2& pivot, sint32 directio
 			}
 
 			if (config.overlay.ram_usage)
+			{
 				ImGui::Text("RAM: %dMB", g_state.ram_usage);
+#if BOOST_OS_IOS
+				ImGui::Text("App RAM (iOS): %dMB", g_state.ram_footprint);
+				if (g_state.donor_donated > 0)
+					ImGui::Text("Donated: %dMB (held by %u donors: %dMB)", g_state.donor_donated, g_state.donor_live, g_state.donor_held);
+#endif
+			}
 
 			if(config.overlay.vram_usage && g_state.vramUsage != -1 && g_state.vramTotal != -1)
 				ImGui::Text("VRAM: %dMB / %dMB", g_state.vramUsage, g_state.vramTotal);
@@ -650,7 +665,18 @@ void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls
 		UpdateStats_CpuPerCore();
 
 	if (overlay.ram_usage)
+	{
 		g_state.ram_usage = (QueryRamUsage() / 1000) / 1000;
+#if BOOST_OS_IOS
+		task_vm_info_data_t vm{};
+		mach_msg_type_number_t vmCount = TASK_VM_INFO_COUNT;
+		if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&vm, &vmCount) == KERN_SUCCESS)
+			g_state.ram_footprint = (uint32)(vm.phys_footprint >> 20);
+		g_state.donor_donated = (uint32)(IOSRamDonor::DonatedBytes() >> 20);
+		g_state.donor_held = (uint32)(IOSRamDonor::DonorFootprintBytes() >> 20);
+		g_state.donor_live = (uint32)IOSRamDonor::LiveDonors();
+#endif
+	}
 
 	if (overlay.vram_usage && g_renderer)
 		g_renderer->GetVRAMInfo(g_state.vramUsage, g_state.vramTotal);
@@ -712,7 +738,14 @@ static void OverlayNative_CollectStats(std::vector<std::string>& stats)
 	}
 
 	if (config.overlay.ram_usage)
+	{
 		stats.emplace_back(OverlayNativeFormat("RAM: %dMB", state.ram_usage));
+#if BOOST_OS_IOS
+		stats.emplace_back(OverlayNativeFormat("App RAM (iOS): %dMB", state.ram_footprint));
+		if (state.donor_donated > 0)
+			stats.emplace_back(OverlayNativeFormat("Donated: %dMB (held by %u donors: %dMB)", state.donor_donated, state.donor_live, state.donor_held));
+#endif
+	}
 
 	if (config.overlay.vram_usage && state.vramUsage != -1 && state.vramTotal != -1)
 		stats.emplace_back(OverlayNativeFormat("VRAM: %dMB / %dMB", state.vramUsage, state.vramTotal));
