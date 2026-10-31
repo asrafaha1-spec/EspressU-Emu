@@ -80,6 +80,7 @@ namespace
 	NSString* const kCountDonorsKey = @"espressu.ramDonor.countDonors"; // default: off (donors are separate processes; iOS limits them separately)
 	NSString* const kRaisePriorityKey = @"espressu.ramDonor.raisePriority"; // default: off (experimental)
 	constexpr int32_t kRaisedPriority = 120; // JETSAM_PRIORITY_AUDIO_AND_ACCESSORY: above a normal foreground app (100)
+	NSString* const kStopAfterMappingKey = @"espressu.ramDonor.stopAfterMapping"; // default: off (experimental)
 	NSString* const kPurgeableKey = @"espressu.ramDonor.purgeable"; // default: off (experimental: purgeable memory is charged to its creator)
 
 	constexpr NSInteger kDefaultMaxDonors = 4;
@@ -516,6 +517,31 @@ namespace IOSRamDonor
 		const size_t freed = donatedBefore > g_donatedBytes.load() ? donatedBefore - g_donatedBytes.load() : 0;
 		if (freed > 0)
 			SetStatus("Released %zu MB of donor memory (%.0f ms)", freed >> 20, (CFAbsoluteTimeGetCurrent() - started) * 1000.0);
+	}
+
+	void FinishMapping()
+	{
+		if (![NSUserDefaults.standardUserDefaults boolForKey:kStopAfterMappingKey])
+			return;
+		std::lock_guard<std::mutex> op(g_opMutex);
+		size_t stopped = 0;
+		{
+			std::lock_guard<std::mutex> lock(g_stateMutex);
+			for (auto& donor : g_donors)
+			{
+				if (!donor.alive)
+					continue;
+				xpc_object_t request = xpc_dictionary_create(nullptr, nullptr, 0);
+				xpc_dictionary_set_string(request, ESP_DONOR_KEY_OP, ESP_DONOR_OP_QUIT);
+				xpc_connection_send_message(donor.connection, request);
+				donor.alive = false;
+				++stopped;
+			}
+		}
+		if (stopped == 0)
+			return;
+		g_donorFootprint = 0;
+		SetStatus("Stopped %zu donor process(es) after mapping; %zu MB stay mapped in this app", stopped, g_donatedBytes.load() >> 20);
 	}
 
 	void Shutdown()

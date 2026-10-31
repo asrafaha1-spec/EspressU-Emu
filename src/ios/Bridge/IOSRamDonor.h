@@ -31,6 +31,11 @@ namespace IOSRamDonor
 	// mapping has been replaced or dropped.
 	void Release(void* target, size_t size);
 
+	// Call once the guest memory has been mapped. With the setting espressu.ramDonor.stopAfterMapping (off by
+	// default, experimental) the donor processes are stopped here while their memory stays mapped in this app,
+	// so iOS cannot kill them later and no live donor owns the pages.
+	void FinishMapping();
+
 	// Stops every donor process. Called at emulator shutdown.
 	void Shutdown();
 

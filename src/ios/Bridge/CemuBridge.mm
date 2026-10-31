@@ -3606,6 +3606,8 @@ CemuBridgeStatus cemu_bridge_boot_title_id(uint64_t titleId) {
 }
 
 static CemuBridgeStatus ios_boot_prepared_title(int prepared) {
+    if (prepared == 0)
+        IOSRamDonor::FinishMapping(); // all guest ranges are mapped by now
     switch (prepared) {
         case 0:
             break;
