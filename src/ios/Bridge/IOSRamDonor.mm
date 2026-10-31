@@ -23,6 +23,7 @@
 + (nullable instancetype)extensionWithIdentifier:(NSString*)identifier error:(NSError**)error;
 - (void)beginExtensionRequestWithInputItems:(NSArray*)inputItems completion:(void (^)(NSUUID* _Nullable requestIdentifier))completion;
 - (void)cancelExtensionRequestWithIdentifier:(NSUUID*)requestIdentifier;
+- (int)pidForRequestIdentifier:(NSUUID*)requestIdentifier;
 - (void)setRequestInterruptionBlock:(void (^)(NSUUID* requestIdentifier))block;
 - (void)setRequestCancellationBlock:(void (^)(NSUUID* requestIdentifier, NSError* error))block;
 @end
@@ -37,6 +38,7 @@ extern "C" void cemu_bridge_log_checkpoint(const char* message);
 namespace
 {
 	std::atomic<size_t> g_donatedBytes{ 0 };
+	bool g_spawnGaveUp = false; // g_opMutex: a further donor was refused twice, so stop asking this session
 	std::atomic<bool> g_limitLifted{ false };
 	std::atomic<bool> g_limitVerified{ false }; // iOS reports a clearly larger limit after the change
 	std::atomic<uint64_t> g_originalLimit{ 0 }; // what iOS reported before the lift (available + footprint)
@@ -266,6 +268,10 @@ namespace
 		}
 		g_extensions.push_back(extension);
 		g_requestIds.push_back(requestId);
+		int pid = 0;
+		if ([(id)extension respondsToSelector:@selector(pidForRequestIdentifier:)])
+			pid = [extension pidForRequestIdentifier:requestId];
+		SetStatus("Donor process spawned, pid %d (%llu MB free to this app at the time)", pid, (unsigned long long)(os_proc_available_memory() >> 20));
 		return true;
 	}
 
@@ -279,7 +285,7 @@ namespace
 			return;
 		}
 		NSXPCListenerEndpoint* endpoint = nil;
-		while (LiveDonorCount() < wanted)
+		while (LiveDonorCount() < wanted && !(g_spawnGaveUp && LiveDonorCount() > 0))
 		{
 			if (!endpoint && !(endpoint = MakeEndpoint()))
 			{
@@ -294,7 +300,15 @@ namespace
 				g_helloSemaphore = semaphore;
 			}
 			if (!SpawnOneDonor(identifier, endpoint))
-				return;
+			{
+				// iOS sometimes refuses the next copy right after the previous one started: wait and retry once.
+				[NSThread sleepForTimeInterval:1.5];
+				if (!SpawnOneDonor(identifier, endpoint))
+				{
+					g_spawnGaveUp = true;
+					return;
+				}
+			}
 			dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kSpawnTimeoutSeconds * NSEC_PER_SEC)));
 			bool connected;
 			{

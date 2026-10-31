@@ -15,6 +15,7 @@
 #include <cstring>
 #if BOOST_OS_IOS
 #include <os/proc.h>
+#include <CoreFoundation/CoreFoundation.h>
 #include "ios/Bridge/IOSRamDonor.h"
 #endif
 
@@ -418,6 +419,20 @@ void MetalMemoryManager::InitBufferCache(size_t size)
         }
     }
 
+#if BOOST_OS_IOS
+    if (m_metalBufferCacheMode == MetalBufferCacheMode::Host)
+    {
+        // Settings > Memory > "GPU reads game memory directly". Off copies what the GPU needs through a small
+        // buffer instead of mapping all of MEM2 (1 GB) into the GPU, which iOS may count against this app.
+        Boolean directSet = false;
+        const Boolean direct = CFPreferencesGetAppBooleanValue(CFSTR("espressu.render.gpuReadsGameMemory"), kCFPreferencesCurrentApplication, &directSet);
+        if (directSet && !direct)
+        {
+            m_metalBufferCacheMode = MetalBufferCacheMode::DeviceShared;
+            cemuLog_log(LogType::Force, "Metal: game memory is copied for the GPU instead of mapped (Settings > Memory)");
+        }
+    }
+#endif
     if (m_metalBufferCacheMode == MetalBufferCacheMode::Host)
     {
         if (m_mtlr->HasUnifiedMemory())
