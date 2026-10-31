@@ -589,7 +589,12 @@ LatteCMDPtr LatteCP_itMemSemaphore(LatteCMDPtr cmd, uint32 nWords)
 				loopCount++;
 				if (loopCount > 2000)
 				{
+#if BOOST_OS_IOS
+					uint32 semaphoreWaitRounds = (uint32)(loopCount - 2000);
+					LatteCP_waitBackoff(semaphoreWaitRounds);
+#else
 					std::this_thread::yield();
+#endif
 					if ((loopCount & 0x3FF) == 0 && Latte_GetStopSignal())
 						LatteThread_Exit();
 				}
@@ -906,6 +911,7 @@ LatteCMDPtr LatteCP_itHLEWaitForFlip(LatteCMDPtr cmd, uint32 nWords)
 	uint32 currentFlipCount = LatteGPUState.flipCounter;
 	LatteWait::Scope waitScope("waiting for the next flip (vsync)", LatteWait::Kind::GuestWait);
 	PerfTelemetry::ScopedTimer syncTimer(PerfTelemetry::Get().gpuSyncNs);
+	uint32 flipWaitRounds = 0;
 	while (true)
 	{
 		_mm_pause();
@@ -914,7 +920,12 @@ LatteCMDPtr LatteCP_itHLEWaitForFlip(LatteCMDPtr cmd, uint32 nWords)
 			break;
 		}
 		LatteTiming_HandleTimedVsync();
+#if BOOST_OS_IOS
+		// Waiting for the next vsync can take up to a frame: sleep briefly instead of burning a core on yield().
+		LatteCP_waitBackoff(flipWaitRounds);
+#else
 		std::this_thread::yield();
+#endif
 	}
 	return cmd;
 }
