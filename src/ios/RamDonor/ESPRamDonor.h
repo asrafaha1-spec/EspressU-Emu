@@ -47,6 +47,22 @@ static inline int ESPSetMemlimitProperties(uint32_t megabytes, bool fatal)
     return control(kMemorystatusCmdSetMemlimitProperties, getpid(), 0, &props, sizeof(props)) == 0 ? 0 : errno;
 }
 
+// Sets this process's jetsam priority band (MEMORYSTATUS_CMD_SET_PRIORITY_PROPERTIES). A higher band is killed
+// later when the whole phone runs short of memory. Same entitlement as above; 0 or an errno value. iOS may put
+// the band back when the app changes state, so callers re-apply it.
+static inline int ESPSetJetsamPriority(int32_t priority)
+{
+    typedef int (*MemorystatusControl)(uint32_t command, int32_t pid, uint32_t flags, void *buffer, size_t size);
+    MemorystatusControl control = (MemorystatusControl)dlsym(RTLD_DEFAULT, "memorystatus_control");
+    if (!control)
+        return ENOSYS;
+    struct { int32_t priority; uint64_t userData; } props;
+    props.priority = priority;
+    props.userData = 0;
+    const uint32_t kMemorystatusCmdSetPriorityProperties = 2;
+    return control(kMemorystatusCmdSetPriorityProperties, getpid(), 0, &props, sizeof(props)) == 0 ? 0 : errno;
+}
+
 #define ESP_DONOR_KEY_OP        "op"
 #define ESP_DONOR_KEY_PID       "pid"
 #define ESP_DONOR_KEY_AVAILABLE "available"

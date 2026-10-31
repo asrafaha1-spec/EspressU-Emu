@@ -78,6 +78,8 @@ namespace
 	NSString* const kMaxDonorsKey = @"espressu.ramDonor.maxDonors"; // default: 4
 	NSString* const kPrefaultKey = @"espressu.ramDonor.prefault";   // default: on (donor touches the pages, so they are charged to it)
 	NSString* const kCountDonorsKey = @"espressu.ramDonor.countDonors"; // default: off (donors are separate processes; iOS limits them separately)
+	NSString* const kRaisePriorityKey = @"espressu.ramDonor.raisePriority"; // default: off (experimental)
+	constexpr int32_t kRaisedPriority = 120; // JETSAM_PRIORITY_AUDIO_AND_ACCESSORY: above a normal foreground app (100)
 	NSString* const kPurgeableKey = @"espressu.ramDonor.purgeable"; // default: off (experimental: purgeable memory is charged to its creator)
 
 	constexpr NSInteger kDefaultMaxDonors = 4;
@@ -569,6 +571,21 @@ namespace IOSRamDonor
 		else
 			SetStatus("iOS accepted the memory limit change (properties: %s, task limit: %s) but still reports a %llu MB limit, so the app stays inside that",
 				word(viaProperties), word(viaTaskLimit), (unsigned long long)(after >> 20));
+	}
+
+	void MaintainPriority()
+	{
+		static bool s_reported = false;
+		static int s_lastResult = -1;
+		if (![NSUserDefaults.standardUserDefaults boolForKey:kRaisePriorityKey])
+			return;
+		const int result = ESPSetJetsamPriority(kRaisedPriority);
+		if (!s_reported || result != s_lastResult)
+		{
+			s_reported = true;
+			s_lastResult = result;
+			SetStatus("Jetsam priority %d requested: %s", (int)kRaisedPriority, result == 0 ? "accepted by iOS" : strerror(result));
+		}
 	}
 
 	// Asks every donor for its own footprint without blocking the caller; the replies update the cached total.

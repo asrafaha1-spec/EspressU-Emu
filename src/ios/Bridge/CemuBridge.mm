@@ -849,11 +849,17 @@ void cemu_bridge_start_memory_watchdog(void) {
         uint64_t lastFootBucket = 0;
         uint64_t lastAvailBucket = UINT64_MAX;
         bool criticalAnnounced = false;
+        int priorityTick = 0;
         auto lastForced = std::chrono::steady_clock::now();
         auto lastWritten = lastForced;
         while (g_memWatchRunning.load())
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            if (++priorityTick >= 20)
+            {
+                priorityTick = 0;
+                IOSRamDonor::MaintainPriority();
+            }
             unsigned long long avail = 0, foot = 0;
             if (!cemu_bridge_memory_status(&avail, &foot))
                 continue;

@@ -44,6 +44,10 @@ namespace IOSRamDonor
 	// Never returns 0 once the limit is lifted (callers treat 0 as "unknown").
 	uint64_t AvailableMemory();
 
+	// Experimental (setting espressu.ramDonor.raisePriority, off by default): keeps this process in a higher jetsam
+	// band so iOS kills it later when the whole phone runs short. Cheap; call about every two seconds.
+	void MaintainPriority();
+
 	// Cheap, non-blocking counters for the periodic memory log line.
 	size_t DonatedBytes();
 	size_t DonorFootprintBytes(); // what the donor processes themselves report holding (refreshed about once a second)
