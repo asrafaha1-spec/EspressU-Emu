@@ -38,8 +38,8 @@ namespace
 {
 	std::atomic<size_t> g_donatedBytes{ 0 };
 	std::atomic<bool> g_limitLifted{ false };
+	std::atomic<bool> g_limitVerified{ false }; // iOS reports a clearly larger limit after the change
 	std::atomic<uint64_t> g_originalLimit{ 0 }; // what iOS reported before the lift (available + footprint)
-	std::atomic<bool> g_loggedPastOriginal{ false };
 
 	NSString* const kMemoryCapKey = @"espressu.ramDonor.memoryCapMB"; // default: 3072 (this app plus its donors)
 	constexpr uint64_t kDefaultMemoryCapMB = 3072;
@@ -494,29 +494,36 @@ namespace IOSRamDonor
 
 	void LiftOwnJetsamLimit()
 	{
-		const int result = ESPLiftJetsamLimit(6144);
-		if (result == 0)
-		{
-			g_originalLimit = (uint64_t)os_proc_available_memory() + OwnFootprintBytes();
-			g_limitLifted = true;
-			SetStatus("Raised this app's memory limit to 6144 MB (jetsam limit lifted); the app and its donors budget memory up to %llu MB in total", (unsigned long long)(MemoryCapBytes() >> 20));
-		}
+		const uint64_t before = (uint64_t)os_proc_available_memory() + OwnFootprintBytes();
+		const int viaProperties = ESPSetMemlimitProperties(6144, false);
+		const int viaTaskLimit = ESPLiftJetsamLimit(6144);
+		const uint64_t after = (uint64_t)os_proc_available_memory() + OwnFootprintBytes();
+		g_originalLimit = before;
+		const auto word = [](int error) { return error == 0 ? "ok" : strerror(error); };
+		g_limitLifted = (viaProperties == 0 || viaTaskLimit == 0);
+		// A call that returns success is not proof: only a limit iOS reports as bigger counts.
+		g_limitVerified = g_limitLifted && after > before + (256ull << 20);
+		if (!g_limitLifted)
+			SetStatus("Could not raise the app's memory limit (properties: %s, task limit: %s); needs the com.apple.private.memorystatus entitlement",
+				word(viaProperties), word(viaTaskLimit));
+		else if (g_limitVerified)
+			SetStatus("Memory limit raised from %llu MB to %llu MB (properties: %s, task limit: %s); the app and its donors budget up to %llu MB in total",
+				(unsigned long long)(before >> 20), (unsigned long long)(after >> 20), word(viaProperties), word(viaTaskLimit),
+				(unsigned long long)(MemoryCapBytes() >> 20));
 		else
-			SetStatus("Could not raise the app's memory limit: %s (needs the com.apple.private.memorystatus entitlement)", strerror(result));
+			SetStatus("iOS accepted the memory limit change (properties: %s, task limit: %s) but still reports a %llu MB limit, so the app stays inside that",
+				word(viaProperties), word(viaTaskLimit), (unsigned long long)(after >> 20));
 	}
 
 	uint64_t AvailableMemory()
 	{
 		const uint64_t raw = (uint64_t)os_proc_available_memory();
-		if (!g_limitLifted.load(std::memory_order_relaxed))
+		// Unless iOS really reports a bigger limit, what it reports is what it enforces: a run that trusted
+		// a 3 GB budget was killed at the stock 2.3 GB limit ("per-process-limit").
+		if (!g_limitVerified.load(std::memory_order_relaxed))
 			return raw;
 		const uint64_t footprint = OwnFootprintBytes();
-		const uint64_t original = g_originalLimit.load();
-		if (original != 0 && footprint > original && !g_loggedPastOriginal.exchange(true))
-			SetStatus("Footprint %llu MB passed the original iOS limit of %llu MB and the app is still running: the lift is working",
-				(unsigned long long)(footprint >> 20), (unsigned long long)(original >> 20));
-		// Donor memory is real RAM too: iOS kills for lack of physical memory when this app plus its donors
-		// outgrow the phone, so the ceiling covers both.
+		// Donor memory is real RAM too, so the ceiling covers this app plus its donors.
 		const uint64_t total = footprint + (uint64_t)g_donatedBytes.load();
 		const uint64_t cap = MemoryCapBytes();
 		return total < cap ? cap - total : 1;

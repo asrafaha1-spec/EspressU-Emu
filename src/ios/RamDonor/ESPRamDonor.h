@@ -14,6 +14,7 @@
 
 #include <dlfcn.h>
 #include <errno.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -29,6 +30,21 @@ static inline int ESPLiftJetsamLimit(uint32_t megabytes)
         return ENOSYS;
     const uint32_t kMemorystatusCmdSetJetsamTaskLimit = 6;
     return control(kMemorystatusCmdSetJetsamTaskLimit, getpid(), megabytes, NULL, 0) == 0 ? 0 : errno;
+}
+
+// Second way to raise the limit: MEMORYSTATUS_CMD_SET_MEMLIMIT_PROPERTIES. With `fatal` false the limit is
+// soft, so going past it no longer gets the process killed. Same entitlement as above; 0 or an errno value.
+static inline int ESPSetMemlimitProperties(uint32_t megabytes, bool fatal)
+{
+    typedef int (*MemorystatusControl)(uint32_t command, int32_t pid, uint32_t flags, void *buffer, size_t size);
+    MemorystatusControl control = (MemorystatusControl)dlsym(RTLD_DEFAULT, "memorystatus_control");
+    if (!control)
+        return ENOSYS;
+    struct { int32_t active; uint32_t activeAttr; int32_t inactive; uint32_t inactiveAttr; } props;
+    props.active = props.inactive = (int32_t)megabytes;
+    props.activeAttr = props.inactiveAttr = fatal ? 1u : 0u; // MEMORYSTATUS_MEMLIMIT_ATTR_FATAL = 0x1
+    const uint32_t kMemorystatusCmdSetMemlimitProperties = 8;
+    return control(kMemorystatusCmdSetMemlimitProperties, getpid(), 0, &props, sizeof(props)) == 0 ? 0 : errno;
 }
 
 #define ESP_DONOR_KEY_OP        "op"
