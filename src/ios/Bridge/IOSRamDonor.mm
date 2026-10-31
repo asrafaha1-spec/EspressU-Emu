@@ -77,6 +77,7 @@ namespace
 	NSString* const kEnabledKey = @"espressu.ramDonor.enabled";     // default: on
 	NSString* const kMaxDonorsKey = @"espressu.ramDonor.maxDonors"; // default: 4
 	NSString* const kPrefaultKey = @"espressu.ramDonor.prefault";   // default: on (donor touches the pages, so they are charged to it)
+	NSString* const kCountDonorsKey = @"espressu.ramDonor.countDonors"; // default: off (donors are separate processes; iOS limits them separately)
 	NSString* const kPurgeableKey = @"espressu.ramDonor.purgeable"; // default: off (experimental: purgeable memory is charged to its creator)
 
 	constexpr NSInteger kDefaultMaxDonors = 4;
@@ -173,6 +174,11 @@ namespace
 	{
 		NSUserDefaults* defaults = NSUserDefaults.standardUserDefaults;
 		return [defaults objectForKey:kPrefaultKey] ? [defaults boolForKey:kPrefaultKey] : true;
+	}
+
+	bool CountDonors()
+	{
+		return [NSUserDefaults.standardUserDefaults boolForKey:kCountDonorsKey];
 	}
 
 	bool Purgeable()
@@ -557,7 +563,7 @@ namespace IOSRamDonor
 			SetStatus("Could not raise the app's memory limit (properties: %s, task limit: %s); needs the com.apple.private.memorystatus entitlement",
 				word(viaProperties), word(viaTaskLimit));
 		else if (g_limitVerified)
-			SetStatus("Memory limit raised from %llu MB to %llu MB (properties: %s, task limit: %s); the app and its donors budget up to %llu MB in total",
+			SetStatus("Memory limit raised from %llu MB to %llu MB (properties: %s, task limit: %s); this app's own memory is budgeted up to %llu MB (donor processes are counted separately unless that setting is on)",
 				(unsigned long long)(before >> 20), (unsigned long long)(after >> 20), word(viaProperties), word(viaTaskLimit),
 				(unsigned long long)(MemoryCapBytes() >> 20));
 		else
@@ -610,10 +616,13 @@ namespace IOSRamDonor
 		if (!g_limitVerified.load(std::memory_order_relaxed))
 			return raw;
 		const uint64_t footprint = OwnFootprintBytes();
-		// The ceiling covers this app plus its donors. What the donors themselves report holding is added;
-		// pages that iOS charges to this app instead are already in `footprint`, so nothing is counted twice.
-		RefreshDonorFootprintsIfStale();
-		const uint64_t total = footprint + g_donorFootprint.load();
+		// Donors are separate processes with their own limits, so by default only this app counts against the
+		// ceiling. The setting can add what the donors report holding (pages iOS charges to this app instead
+		// are already in `footprint`, so nothing is counted twice).
+		uint64_t total = footprint;
+		RefreshDonorFootprintsIfStale(); // keeps the logged donor figure fresh either way
+		if (CountDonors())
+			total += g_donorFootprint.load();
 		const uint64_t cap = MemoryCapBytes();
 		return total < cap ? cap - total : 1;
 	}

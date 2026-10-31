@@ -557,6 +557,7 @@ static void ios_bridge_thread_begin(const char* name, bool utilityQoS = true)
 }
 
 size_t PPCRecompiler_getJitArenaSize();
+size_t MetalPipelineCache_GetPipelineCount();
 size_t PPCRecompiler_getJitArenaUsed();
 
 namespace {
@@ -644,11 +645,12 @@ namespace {
             if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&vm, &vmCount) == KERN_SUCCESS)
             {
                 int m = snprintf(line + n, sizeof(line) - n,
-                                 " | breakdown: internal %llu MB, compressed %llu MB, device %llu MB, external %llu MB, heap %llu MB, JIT arena %llu of %llu MB",
+                                 " | breakdown: internal %llu MB, compressed %llu MB, device %llu MB, external %llu MB, heap %llu MB, JIT arena %llu of %llu MB, compiled pipelines %zu",
                                  (unsigned long long)(vm.internal >> 20), (unsigned long long)(vm.compressed >> 20),
                                  (unsigned long long)(vm.device >> 20), (unsigned long long)(vm.external >> 20),
                                  (unsigned long long)(heap.size_in_use >> 20),
-                                 (unsigned long long)(PPCRecompiler_getJitArenaUsed() >> 20), (unsigned long long)(PPCRecompiler_getJitArenaSize() >> 20));
+                                 (unsigned long long)(PPCRecompiler_getJitArenaUsed() >> 20), (unsigned long long)(PPCRecompiler_getJitArenaSize() >> 20),
+                                 MetalPipelineCache_GetPipelineCount());
                 if (m > 0) n += m;
             }
         }

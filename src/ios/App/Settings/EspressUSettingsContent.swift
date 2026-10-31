@@ -163,12 +163,15 @@ extension EspressUSettingsView {
                                            SettingsOption(id: "512", title: "512 MB"),
                                            SettingsOption(id: "768", title: "768 MB")],
                                           values.intChoice("espressu.render.textureBudgetMB", 384))),
-            SettingsItem(id: "ram.cap", title: "Total memory ceiling",
-                         detail: "Only used when iOS allowed this app a higher memory limit (TrollStore). Counts EspressU plus its RAM donors together. EspressU frees textures and warns before use reaches this. Too high and iOS may close the app without warning. Applies the next time EspressU starts.",
+            SettingsItem(id: "ram.cap", title: "App memory ceiling",
+                         detail: "Only used when iOS allowed this app a higher memory limit (TrollStore). EspressU starts freeing textures before its own memory reaches this. iOS can still close the app when the whole phone runs out of memory, whatever this is set to. Applies the next time EspressU starts.",
                          control: .choice([SettingsOption(id: "2560", title: "2.5 GB"),
                                            SettingsOption(id: "3072", title: "3 GB"),
                                            SettingsOption(id: "3584", title: "3.5 GB")],
                                           values.intChoice("espressu.ramDonor.memoryCapMB", 3072))),
+            SettingsItem(id: "ram.countDonors", title: "Count donor memory in the ceiling",
+                         detail: "Off (default): only EspressU's own memory is compared with the ceiling, because donors are separate processes. On: the memory the donors hold is added, so textures are freed earlier. Applies the next time EspressU starts.",
+                         control: .toggle(values.bool("espressu.ramDonor.countDonors", false))),
         ]
 
         return [

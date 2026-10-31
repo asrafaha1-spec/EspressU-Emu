@@ -172,6 +172,12 @@ bool IsAsyncPipelineAllowed(const MetalAttachmentsInfo& attachmentsInfo, Vector2
 MetalPipelineCache* g_mtlPipelineCache = nullptr;
 static std::mutex g_mtlPipelineCacheLifeMutex;
 
+size_t MetalPipelineCache_GetPipelineCount()
+{
+    // Read for the memory log only; a slightly stale count is fine.
+    return g_mtlPipelineCache ? g_mtlPipelineCache->GetPipelineCacheSize() : 0;
+}
+
 MetalPipelineCache& MetalPipelineCache::GetInstance()
 {
     return *g_mtlPipelineCache;
