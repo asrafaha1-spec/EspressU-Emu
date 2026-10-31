@@ -3,6 +3,7 @@
 #include "IOSRamDonor.h"
 
 #import <Foundation/Foundation.h>
+#import <CoreFoundation/CoreFoundation.h>
 #import <mach/mach.h>
 #import <os/proc.h>
 #import <xpc/xpc.h>
@@ -415,6 +416,7 @@ namespace IOSRamDonor
 		if (!IsEnabled() || !target || size < kMinRegionBytes)
 			return 0;
 
+		const CFAbsoluteTime started = CFAbsoluteTimeGetCurrent();
 		std::lock_guard<std::mutex> op(g_opMutex);
 		EnsureDonors(MaxDonors());
 
@@ -441,6 +443,9 @@ namespace IOSRamDonor
 		}
 
 		const size_t live = LiveDonorCount();
+		const double elapsedMs = (CFAbsoluteTimeGetCurrent() - started) * 1000.0;
+		if (elapsedMs > 250.0)
+			SetStatus("Backing %zu MB with donors took %.0f ms (the emulator waits for this)", size >> 20, elapsedMs);
 		if (mappedTotal >= size)
 			SetStatus("%zu MB of %zu MB mapped at %p across %zu donor(s)", mappedTotal >> 20, size >> 20, target, live);
 		else
@@ -450,6 +455,8 @@ namespace IOSRamDonor
 
 	void Release(void* target, size_t size)
 	{
+		const CFAbsoluteTime started = CFAbsoluteTimeGetCurrent();
+		const size_t donatedBefore = g_donatedBytes.load();
 		std::lock_guard<std::mutex> op(g_opMutex);
 		const uintptr_t begin = (uintptr_t)target;
 		const uintptr_t end = begin + size;
@@ -474,6 +481,9 @@ namespace IOSRamDonor
 			else
 				++it;
 		}
+		const size_t freed = donatedBefore > g_donatedBytes.load() ? donatedBefore - g_donatedBytes.load() : 0;
+		if (freed > 0)
+			SetStatus("Released %zu MB of donor memory (%.0f ms)", freed >> 20, (CFAbsoluteTimeGetCurrent() - started) * 1000.0);
 	}
 
 	void Shutdown()

@@ -13,6 +13,7 @@
 #import <QuartzCore/CAMetalLayer.h>
 
 #include <sys/sysctl.h>
+#include <algorithm>
 #include <sys/mman.h>
 #include <mach/mach.h>
 #include <string>
@@ -577,8 +578,46 @@ namespace {
         return (uint64_t)info.virtual_size;
     }
 
+    // Where the resident, dirtied and compressed pages are, by VM tag (like `vmmap -summary`): tag 1-13 are the
+    // malloc zones, 21 IOKit, 30 stacks, 64 JIT, 88 IOSurface, 100 IOAccelerator, 0 plain mmap (guest memory, caches).
+    // Writes the biggest few into `out`.
+    void cemu_mem_region_summary(char* out, size_t capacity) {
+        struct Tally { uint64_t resident = 0, dirty = 0, compressed = 0; };
+        static Tally tally[256];
+        for (auto& t : tally) t = Tally{};
+        vm_address_t address = 0;
+        natural_t depth = 0;
+        const uint64_t pageBytes = (uint64_t)vm_page_size;
+        for (int guard = 0; guard < 200000; ++guard) {
+            vm_size_t size = 0;
+            vm_region_submap_info_data_64_t info{};
+            mach_msg_type_number_t count = VM_REGION_SUBMAP_INFO_COUNT_64;
+            if (vm_region_recurse_64(mach_task_self(), &address, &size, &depth, (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS)
+                break;
+            if (info.is_submap) { ++depth; continue; }
+            Tally& t = tally[info.user_tag & 0xff];
+            t.resident += (uint64_t)info.pages_resident * pageBytes;
+            t.dirty += (uint64_t)info.pages_dirtied * pageBytes;
+            t.compressed += (uint64_t)info.pages_swapped_out * pageBytes;
+            address += size;
+        }
+        int order[256];
+        for (int i = 0; i < 256; ++i) order[i] = i;
+        std::sort(order, order + 256, [](int a, int b) { return tally[a].dirty + tally[a].compressed > tally[b].dirty + tally[b].compressed; });
+        size_t n = 0;
+        out[0] = 0;
+        for (int i = 0; i < 5 && n + 64 < capacity; ++i) {
+            const Tally& t = tally[order[i]];
+            if (t.dirty + t.compressed < (8ull << 20)) break;
+            int m = snprintf(out + n, capacity - n, "%stag %d: %llu resident/%llu dirty/%llu compressed MB", i ? ", " : "", order[i],
+                             (unsigned long long)(t.resident >> 20), (unsigned long long)(t.dirty >> 20), (unsigned long long)(t.compressed >> 20));
+            if (m <= 0) break;
+            n += (size_t)m;
+        }
+    }
+
     void cemu_mem_write_line(const char* tag, uint64_t availableBytes, uint64_t footprintBytes) {
-        char line[1100];
+        char line[1700];
         int n = snprintf(line, sizeof(line),
                  "MEM %s: %llu MB still available to this process, %llu MB in use",
                  tag,
@@ -610,6 +649,16 @@ namespace {
                                  (unsigned long long)(vm.device >> 20), (unsigned long long)(vm.external >> 20),
                                  (unsigned long long)(heap.size_in_use >> 20),
                                  (unsigned long long)(PPCRecompiler_getJitArenaUsed() >> 20), (unsigned long long)(PPCRecompiler_getJitArenaSize() >> 20));
+                if (m > 0) n += m;
+            }
+        }
+        if (n > 0 && n < (int)sizeof(line))
+        {
+            char regions[400];
+            cemu_mem_region_summary(regions, sizeof(regions));
+            if (regions[0])
+            {
+                int m = snprintf(line + n, sizeof(line) - n, " | regions: %s", regions);
                 if (m > 0) n += m;
             }
         }
