@@ -56,6 +56,7 @@ static inline int ESPSetMemlimitProperties(uint32_t megabytes, bool fatal)
 #define ESP_DONOR_KEY_SHMEM     "shmem"
 #define ESP_DONOR_KEY_ERROR     "error"
 #define ESP_DONOR_KEY_PREFAULT  "prefault"
+#define ESP_DONOR_KEY_PURGEABLE "purgeable"
 
 #define ESP_DONOR_OP_HELLO "hello"
 #define ESP_DONOR_OP_ALLOC "alloc"

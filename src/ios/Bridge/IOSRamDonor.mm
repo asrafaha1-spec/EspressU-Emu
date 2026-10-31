@@ -39,6 +39,7 @@ extern "C" void cemu_bridge_log_checkpoint(const char* message);
 namespace
 {
 	std::atomic<size_t> g_donatedBytes{ 0 };
+	std::atomic<size_t> g_donorHeldBytes{ 0 }; // donated bytes whose pages are charged to the donors (filled up front or purgeable)
 	bool g_spawnGaveUp = false; // g_opMutex: a further donor was refused twice, so stop asking this session
 	std::atomic<bool> g_limitLifted{ false };
 	std::atomic<bool> g_limitVerified{ false }; // iOS reports a clearly larger limit after the change
@@ -74,7 +75,8 @@ namespace
 	// User settings (NSUserDefaults).
 	NSString* const kEnabledKey = @"espressu.ramDonor.enabled";     // default: on
 	NSString* const kMaxDonorsKey = @"espressu.ramDonor.maxDonors"; // default: 4
-	NSString* const kPrefaultKey = @"espressu.ramDonor.prefault";   // default: off (donors commit lazily)
+	NSString* const kPrefaultKey = @"espressu.ramDonor.prefault";   // default: on (donor touches the pages, so they are charged to it)
+	NSString* const kPurgeableKey = @"espressu.ramDonor.purgeable"; // default: off (experimental: purgeable memory is charged to its creator)
 
 	constexpr NSInteger kDefaultMaxDonors = 4;
 	constexpr NSInteger kHardMaxDonors = 8;
@@ -94,6 +96,7 @@ namespace
 		size_t length = 0;
 		size_t donorIndex = 0;
 		uint64_t chunkId = 0;
+		bool charged = false; // pages are charged to the donor, not to this app
 	};
 
 	// g_opMutex serialises the public API (and may be held while waiting on donors).
@@ -163,7 +166,13 @@ namespace
 
 	bool Prefault()
 	{
-		return [NSUserDefaults.standardUserDefaults boolForKey:kPrefaultKey];
+		NSUserDefaults* defaults = NSUserDefaults.standardUserDefaults;
+		return [defaults objectForKey:kPrefaultKey] ? [defaults boolForKey:kPrefaultKey] : true;
+	}
+
+	bool Purgeable()
+	{
+		return [NSUserDefaults.standardUserDefaults boolForKey:kPurgeableKey];
 	}
 
 	size_t LiveDonorCount()
@@ -344,7 +353,10 @@ namespace
 		xpc_object_t request = xpc_dictionary_create(nullptr, nullptr, 0);
 		xpc_dictionary_set_string(request, ESP_DONOR_KEY_OP, ESP_DONOR_OP_ALLOC);
 		xpc_dictionary_set_uint64(request, ESP_DONOR_KEY_SIZE, want);
-		xpc_dictionary_set_bool(request, ESP_DONOR_KEY_PREFAULT, Prefault());
+		const bool prefault = Prefault();
+		const bool purgeable = Purgeable();
+		xpc_dictionary_set_bool(request, ESP_DONOR_KEY_PREFAULT, prefault);
+		xpc_dictionary_set_bool(request, ESP_DONOR_KEY_PURGEABLE, purgeable);
 
 		// Runs on the emulator thread, never on the connection's own queue, so a synchronous wait is fine.
 		xpc_object_t reply = xpc_connection_send_message_with_reply_sync(donor.connection, request);
@@ -396,8 +408,11 @@ namespace
 		}
 		vm_protect(mach_task_self(), destination, length, FALSE, VM_PROT_READ | VM_PROT_WRITE);
 
-		g_chunks.push_back({ target, length, donorIndex, chunkId });
+		const bool charged = prefault || purgeable;
+		g_chunks.push_back({ target, length, donorIndex, chunkId, charged });
 		g_donatedBytes += length;
+		if (charged)
+			g_donorHeldBytes += length;
 		std::lock_guard<std::mutex> lock(g_stateMutex);
 		g_donors[donorIndex].available = g_donors[donorIndex].available > length ? g_donors[donorIndex].available - length : 0;
 		return length;
@@ -476,6 +491,8 @@ namespace IOSRamDonor
 				if (alive)
 					SendFree(donor, it->chunkId);
 				g_donatedBytes -= it->length;
+				if (it->charged)
+					g_donorHeldBytes -= it->length;
 				it = g_chunks.erase(it);
 			}
 			else
@@ -508,6 +525,7 @@ namespace IOSRamDonor
 		g_requestIds.clear();
 		g_chunks.clear();
 		g_donatedBytes = 0;
+		g_donorHeldBytes = 0;
 		if (g_listener)
 		{
 			xpc_connection_cancel(g_listener);
@@ -547,8 +565,10 @@ namespace IOSRamDonor
 		if (!g_limitVerified.load(std::memory_order_relaxed))
 			return raw;
 		const uint64_t footprint = OwnFootprintBytes();
-		// Donor memory is real RAM too, so the ceiling covers this app plus its donors.
-		const uint64_t total = footprint + (uint64_t)g_donatedBytes.load();
+		// The ceiling covers this app plus its donors. Pages the donor never touched (or that iOS charges to
+		// whoever touches them) already sit in our own footprint, so only donor-held bytes are added; counting
+		// all donated bytes made the app report "0 MB available" with iOS still having room.
+		const uint64_t total = footprint + (uint64_t)g_donorHeldBytes.load();
 		const uint64_t cap = MemoryCapBytes();
 		return total < cap ? cap - total : 1;
 	}

@@ -42,10 +42,8 @@ static os_log_t ESPLog(void)
 // The host passes its endpoint in NSExtensionItem.userInfo. iOS decodes extension input items with an
 // allow-list of plain property-list classes, so NSXPCListenerEndpoint is rejected before beginRequest runs.
 // That decoding happens before any of our own code gets a turn, so the check has to be relaxed from a
-// constructor. It is restored as soon as the endpoint has been read.
-
-static IMP sOriginalValidate;
-static Method sValidateMethod;
+// constructor. It stays relaxed for the life of this small single-purpose process: iOS may hand a later request to
+// a donor that is already running, and that request has to decode too (restoring it broke the second donor).
 
 static BOOL ESPAllowEndpointDecoding(id self, SEL _cmd, Class cls, NSString *key, BOOL allowInvocations)
 {
@@ -55,21 +53,14 @@ static BOOL ESPAllowEndpointDecoding(id self, SEL _cmd, Class cls, NSString *key
 static void ESPInstallDecoderHook(void)
 {
     Class decoder = NSClassFromString(@"NSXPCDecoder");
-    sValidateMethod = class_getInstanceMethod(decoder, NSSelectorFromString(@"_validateAllowedClass:forKey:allowingInvocations:"));
-    if (!sValidateMethod)
+    Method validate = class_getInstanceMethod(decoder, NSSelectorFromString(@"_validateAllowedClass:forKey:allowingInvocations:"));
+    if (!validate)
     {
         os_log_error(ESPLog(), "Loaded in pid %d, but NSXPCDecoder validation hook was NOT found", getpid());
         return;
     }
-    sOriginalValidate = method_setImplementation(sValidateMethod, (IMP)ESPAllowEndpointDecoding);
+    method_setImplementation(validate, (IMP)ESPAllowEndpointDecoding);
     os_log(ESPLog(), "Loaded in pid %d, decoder validation relaxed", getpid());
-}
-
-static void ESPRemoveDecoderHook(void)
-{
-    if (sValidateMethod && sOriginalValidate)
-        method_setImplementation(sValidateMethod, sOriginalValidate);
-    sOriginalValidate = NULL;
 }
 
 __attribute__((constructor)) static void ESPRamDonorLoaded(void)
@@ -111,6 +102,7 @@ static void ESPHandleAlloc(xpc_object_t request, xpc_object_t reply)
     const uint64_t pageSize = (uint64_t)vm_page_size;
     uint64_t size = xpc_dictionary_get_uint64(request, ESP_DONOR_KEY_SIZE);
     const bool prefault = xpc_dictionary_get_bool(request, ESP_DONOR_KEY_PREFAULT);
+    const bool purgeable = xpc_dictionary_get_bool(request, ESP_DONOR_KEY_PURGEABLE);
     if (size == 0)
     {
         ESPReplyError(reply, "Refusing to create a zero sized region");
@@ -124,7 +116,13 @@ static void ESPHandleAlloc(xpc_object_t request, xpc_object_t reply)
     }
 
     vm_address_t address = 0;
-    kern_return_t kr = vm_allocate(mach_task_self(), &address, size, VM_FLAGS_ANYWHERE);
+    // Purgeable memory is charged to the process that created it, even when another process touches the pages.
+    kern_return_t kr = vm_allocate(mach_task_self(), &address, size, VM_FLAGS_ANYWHERE | (purgeable ? VM_FLAGS_PURGABLE : 0));
+    if (purgeable && kr != KERN_SUCCESS)
+    {
+        address = 0;
+        kr = vm_allocate(mach_task_self(), &address, size, VM_FLAGS_ANYWHERE);
+    }
     if (kr != KERN_SUCCESS)
     {
         ESPReplyError(reply, mach_error_string(kr));
@@ -139,6 +137,19 @@ static void ESPHandleAlloc(xpc_object_t request, xpc_object_t reply)
     }
 
     xpc_object_t shmem = xpc_shmem_create((void *)(uintptr_t)address, (size_t)size);
+    if (!shmem && purgeable)
+    {
+        // Some iOS versions refuse to share purgeable memory; fall back to ordinary memory.
+        vm_deallocate(mach_task_self(), address, size);
+        address = 0;
+        if (vm_allocate(mach_task_self(), &address, size, VM_FLAGS_ANYWHERE) == KERN_SUCCESS)
+        {
+            volatile uint8_t *bytes = (volatile uint8_t *)(uintptr_t)address;
+            for (uint64_t offset = 0; offset < size && prefault; offset += pageSize)
+                bytes[offset] = 0;
+            shmem = xpc_shmem_create((void *)(uintptr_t)address, (size_t)size);
+        }
+    }
     if (!shmem)
     {
         vm_deallocate(mach_task_self(), address, size);
@@ -199,7 +210,6 @@ static void ESPHandleFree(xpc_object_t request, xpc_object_t reply)
         else if (candidate)
             os_log_error(ESPLog(), "The endpoint decoded as %{public}@, not an NSXPCListenerEndpoint", NSStringFromClass([candidate class]));
     }
-    ESPRemoveDecoderHook();
 
     xpc_endpoint_t raw = [endpoint respondsToSelector:@selector(_endpoint)] ? [endpoint _endpoint] : nil;
     if (!raw)
