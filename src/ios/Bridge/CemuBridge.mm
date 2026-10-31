@@ -555,6 +555,9 @@ static void ios_bridge_thread_begin(const char* name, bool utilityQoS = true)
         pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0);
 }
 
+size_t PPCRecompiler_getJitArenaSize();
+size_t PPCRecompiler_getJitArenaUsed();
+
 namespace {
     std::atomic<bool> g_memWatchRunning{false};
 
@@ -575,7 +578,7 @@ namespace {
     }
 
     void cemu_mem_write_line(const char* tag, uint64_t availableBytes, uint64_t footprintBytes) {
-        char line[720];
+        char line[1100];
         int n = snprintf(line, sizeof(line),
                  "MEM %s: %llu MB still available to this process, %llu MB in use",
                  tag,
@@ -590,6 +593,25 @@ namespace {
         {
             int m = snprintf(line + n, sizeof(line) - n, " | donors: %zu live, %zu MB donated", IOSRamDonor::LiveDonors(), IOSRamDonor::DonatedBytes() / (1024u * 1024u));
             if (m > 0) n += m;
+        }
+        if (n > 0 && n < (int)sizeof(line))
+        {
+            // Where this process's own memory is: what iOS counts (internal, compressed, device/GPU-mapped),
+            // the malloc heap, and the JIT arena. Everything else in "in use" is mapped files, stacks and the like.
+            task_vm_info_data_t vm{};
+            mach_msg_type_number_t vmCount = TASK_VM_INFO_COUNT;
+            malloc_statistics_t heap{};
+            malloc_zone_statistics(nullptr, &heap);
+            if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&vm, &vmCount) == KERN_SUCCESS)
+            {
+                int m = snprintf(line + n, sizeof(line) - n,
+                                 " | breakdown: internal %llu MB, compressed %llu MB, device %llu MB, external %llu MB, heap %llu MB, JIT arena %llu of %llu MB",
+                                 (unsigned long long)(vm.internal >> 20), (unsigned long long)(vm.compressed >> 20),
+                                 (unsigned long long)(vm.device >> 20), (unsigned long long)(vm.external >> 20),
+                                 (unsigned long long)(heap.size_in_use >> 20),
+                                 (unsigned long long)(PPCRecompiler_getJitArenaUsed() >> 20), (unsigned long long)(PPCRecompiler_getJitArenaSize() >> 20));
+                if (m > 0) n += m;
+            }
         }
         auto& w = LatteWait::Get();
         if (n > 0 && n < (int)sizeof(line) && w.memStatsValid.load())
