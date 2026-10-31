@@ -630,7 +630,7 @@ namespace {
         }
         if (n > 0 && n < (int)sizeof(line) && IOSRamDonor::DonatedBytes() > 0)
         {
-            int m = snprintf(line + n, sizeof(line) - n, " | donors: %zu live, %zu MB donated", IOSRamDonor::LiveDonors(), IOSRamDonor::DonatedBytes() / (1024u * 1024u));
+            int m = snprintf(line + n, sizeof(line) - n, " | donors: %zu live, %zu MB donated, %zu MB held by the donor processes", IOSRamDonor::LiveDonors(), IOSRamDonor::DonatedBytes() / (1024u * 1024u), IOSRamDonor::DonorFootprintBytes() / (1024u * 1024u));
             if (m > 0) n += m;
         }
         if (n > 0 && n < (int)sizeof(line))

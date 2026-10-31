@@ -28,7 +28,9 @@ build_variant() { # <name> <app entitlements file> <extension entitlements file>
   cp -R "$SRC/Payload" "$work/Payload"
   local app="$work/Payload/EspressU.app"
   ldid -S"$app_ent" "$app/EspressU"
-  ldid -S"$ext_ent" "$app/PlugIns/EspressURamDonor.appex/EspressURamDonor"
+  for appex in "$app"/PlugIns/EspressURamDonor*.appex; do
+    ldid -S"$ext_ent" "$appex/$(basename "$appex" .appex)"
+  done
   echo "== $name: app entitlements"; ldid -e "$app/EspressU" | grep '<key>' || true
   (cd "$work" && zip -qry "$OUT/EspressU-$name.tipa" Payload)
   rm -rf "$work"

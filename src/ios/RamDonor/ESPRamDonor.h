@@ -57,11 +57,13 @@ static inline int ESPSetMemlimitProperties(uint32_t megabytes, bool fatal)
 #define ESP_DONOR_KEY_ERROR     "error"
 #define ESP_DONOR_KEY_PREFAULT  "prefault"
 #define ESP_DONOR_KEY_PURGEABLE "purgeable"
+#define ESP_DONOR_KEY_FOOTPRINT "footprint"
 
 #define ESP_DONOR_OP_HELLO "hello"
 #define ESP_DONOR_OP_ALLOC "alloc"
 #define ESP_DONOR_OP_FREE  "free"
 #define ESP_DONOR_OP_QUIT  "quit"
+#define ESP_DONOR_OP_STATUS "status"
 
 // NSExtensionItem.userInfo key that carries the host's NSXPCListenerEndpoint.
 #define ESP_DONOR_USERINFO_ENDPOINT "endpoint"  // use as @ESP_DONOR_USERINFO_ENDPOINT in Objective-C

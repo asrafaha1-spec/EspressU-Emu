@@ -245,6 +245,16 @@ static void ESPHandleFree(xpc_object_t request, xpc_object_t reply)
             ESPHandleAlloc(event, reply);
         else if (strcmp(op, ESP_DONOR_OP_FREE) == 0)
             ESPHandleFree(event, reply);
+        else if (strcmp(op, ESP_DONOR_OP_STATUS) == 0)
+        {
+            task_vm_info_data_t info;
+            mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+            const bool ok = task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) == KERN_SUCCESS;
+            xpc_dictionary_set_bool(reply, ESP_DONOR_KEY_OK, ok);
+            xpc_dictionary_set_int64(reply, ESP_DONOR_KEY_PID, getpid());
+            xpc_dictionary_set_uint64(reply, ESP_DONOR_KEY_FOOTPRINT, ok ? (uint64_t)info.phys_footprint : 0);
+            xpc_dictionary_set_uint64(reply, ESP_DONOR_KEY_AVAILABLE, (uint64_t)os_proc_available_memory());
+        }
         else
             ESPReplyError(reply, "Unknown request");
         xpc_connection_send_message(xpc_dictionary_get_remote_connection(event), reply);

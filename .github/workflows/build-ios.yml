@@ -68,7 +68,9 @@ jobs:
       - name: Package app payload
         run: |
           APP="$(find build-xcode/Build/Products -maxdepth 2 -name EspressU.app | head -1)"
-          test -d "$APP/PlugIns/EspressURamDonor.appex" || { echo "RAM donor extension missing from the app"; exit 1; }
+          for n in EspressURamDonor EspressURamDonor2 EspressURamDonor3; do
+            test -d "$APP/PlugIns/$n.appex" || { echo "RAM donor extension $n missing from the app"; exit 1; }
+          done
           rm -rf Payload && mkdir Payload && cp -R "$APP" Payload/
 
       - name: Package TrollStore build (fake-signed)

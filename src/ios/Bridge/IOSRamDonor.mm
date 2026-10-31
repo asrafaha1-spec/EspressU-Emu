@@ -15,6 +15,7 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <set>
 #include <vector>
 
 #include "../RamDonor/ESPRamDonor.h"
@@ -39,8 +40,8 @@ extern "C" void cemu_bridge_log_checkpoint(const char* message);
 namespace
 {
 	std::atomic<size_t> g_donatedBytes{ 0 };
-	std::atomic<size_t> g_donorHeldBytes{ 0 }; // donated bytes whose pages are charged to the donors (filled up front or purgeable)
-	bool g_spawnGaveUp = false; // g_opMutex: a further donor was refused twice, so stop asking this session
+	std::atomic<uint64_t> g_donorFootprint{ 0 }; // sum of the donors' own phys_footprint at the last refresh
+	std::atomic<double> g_footprintRefreshedAt{ 0 };
 	std::atomic<bool> g_limitLifted{ false };
 	std::atomic<bool> g_limitVerified{ false }; // iOS reports a clearly larger limit after the change
 	std::atomic<uint64_t> g_originalLimit{ 0 }; // what iOS reported before the lift (available + footprint)
@@ -88,6 +89,7 @@ namespace
 		int64_t pid = 0;
 		uint64_t available = 0; // bytes the donor reported it can still hand out
 		bool alive = true;
+		uint64_t footprint = 0; // the donor's own phys_footprint at the last status reply
 	};
 
 	struct Chunk
@@ -96,7 +98,6 @@ namespace
 		size_t length = 0;
 		size_t donorIndex = 0;
 		uint64_t chunkId = 0;
-		bool charged = false; // pages are charged to the donor, not to this app
 	};
 
 	// g_opMutex serialises the public API (and may be held while waiting on donors).
@@ -111,6 +112,7 @@ namespace
 	std::vector<Chunk> g_chunks;                // g_opMutex
 	std::vector<id<ESPExtension>> g_extensions; // g_opMutex
 	std::vector<NSUUID*> g_requestIds;          // g_opMutex
+	std::set<std::string> g_startedIdentifiers; // g_opMutex: extension copies already asked for a process
 	xpc_connection_t g_listener = nullptr;      // g_opMutex
 	dispatch_queue_t g_queue = nullptr;         // g_opMutex
 
@@ -133,21 +135,24 @@ namespace
 		cemu_bridge_log_checkpoint(line);
 	}
 
-	NSString* DonorIdentifier()
+	// Every embedded copy of the donor extension. iOS can answer several requests for one extension with a single
+	// process, which shares one memory allowance, so each copy has its own bundle identifier and is asked once.
+	NSArray<NSString*>* DonorIdentifiers()
 	{
 		NSURL* plugIns = NSBundle.mainBundle.builtInPlugInsURL;
 		if (!plugIns)
-			return nil;
+			return @[];
 		NSArray<NSURL*>* entries = [NSFileManager.defaultManager contentsOfDirectoryAtURL:plugIns includingPropertiesForKeys:nil options:0 error:nil];
+		NSMutableArray<NSString*>* identifiers = [NSMutableArray array];
 		for (NSURL* entry in entries)
 		{
-			if (![entry.lastPathComponent isEqualToString:@"EspressURamDonor.appex"])
+			if (![entry.lastPathComponent hasPrefix:@"EspressURamDonor"] || ![entry.pathExtension isEqualToString:@"appex"])
 				continue;
 			NSString* identifier = [NSBundle bundleWithURL:entry].bundleIdentifier;
 			if (identifier.length)
-				return identifier;
+				[identifiers addObject:identifier];
 		}
-		return nil;
+		return [identifiers sortedArrayUsingSelector:@selector(compare:)];
 	}
 
 	bool UserEnabled()
@@ -208,12 +213,18 @@ namespace
 			donor.pid = xpc_dictionary_get_int64(event, ESP_DONOR_KEY_PID);
 			donor.available = xpc_dictionary_get_uint64(event, ESP_DONOR_KEY_AVAILABLE);
 			dispatch_semaphore_t semaphore;
+			bool reused = false;
 			{
 				std::lock_guard<std::mutex> lock(g_stateMutex);
-				g_donors.push_back(donor);
+				for (const auto& known : g_donors)
+					reused = reused || (known.alive && known.pid == donor.pid);
+				if (!reused)
+					g_donors.push_back(donor);
 				semaphore = g_helloSemaphore;
 			}
-			NSLog(@"[RamDonor] Donor pid %lld connected, %llu MB available", (long long)donor.pid, (unsigned long long)(donor.available >> 20));
+			if (reused)
+				SetStatus("iOS answered another donor request with process %lld that is already a donor; it is not counted", (long long)donor.pid);
+			NSLog(@"[RamDonor] Donor pid %lld connected, %llu MB available%s", (long long)donor.pid, (unsigned long long)(donor.available >> 20), reused ? " (already known)" : "");
 			if (semaphore)
 				dispatch_semaphore_signal(semaphore);
 		});
@@ -285,18 +296,25 @@ namespace
 		return true;
 	}
 
-	// Starts donors until `wanted` are connected, or one fails to appear. Caller holds g_opMutex.
+	// Starts one process per embedded donor extension copy until `wanted` distinct donors are connected.
+	// Caller holds g_opMutex.
 	void EnsureDonors(size_t wanted)
 	{
-		NSString* identifier = DonorIdentifier();
-		if (!identifier)
+		NSArray<NSString*>* identifiers = DonorIdentifiers();
+		if (identifiers.count == 0)
 		{
 			SetStatus("No donor extension in PlugIns");
 			return;
 		}
 		NSXPCListenerEndpoint* endpoint = nil;
-		while (LiveDonorCount() < wanted && !(g_spawnGaveUp && LiveDonorCount() > 0))
+		for (NSString* identifier in identifiers)
 		{
+			if (LiveDonorCount() >= wanted)
+				return;
+			const std::string key = identifier.UTF8String;
+			if (g_startedIdentifiers.count(key))
+				continue;
+			g_startedIdentifiers.insert(key);
 			if (!endpoint && !(endpoint = MakeEndpoint()))
 			{
 				SetStatus("Could not create the donor endpoint");
@@ -311,13 +329,10 @@ namespace
 			}
 			if (!SpawnOneDonor(identifier, endpoint))
 			{
-				// iOS sometimes refuses the next copy right after the previous one started: wait and retry once.
+				// iOS sometimes refuses a copy right after the previous one started: wait and retry once.
 				[NSThread sleepForTimeInterval:1.5];
 				if (!SpawnOneDonor(identifier, endpoint))
-				{
-					g_spawnGaveUp = true;
-					return;
-				}
+					continue; // try the next copy
 			}
 			dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kSpawnTimeoutSeconds * NSEC_PER_SEC)));
 			bool connected;
@@ -326,10 +341,7 @@ namespace
 				connected = g_donors.size() > before;
 			}
 			if (!connected)
-			{
-				SetStatus("The donor process spawned, but no connection was accepted before the timeout");
-				return;
-			}
+				SetStatus("A donor copy started but did not add a new process (reused or never connected)");
 		}
 	}
 
@@ -408,11 +420,8 @@ namespace
 		}
 		vm_protect(mach_task_self(), destination, length, FALSE, VM_PROT_READ | VM_PROT_WRITE);
 
-		const bool charged = prefault || purgeable;
-		g_chunks.push_back({ target, length, donorIndex, chunkId, charged });
+		g_chunks.push_back({ target, length, donorIndex, chunkId });
 		g_donatedBytes += length;
-		if (charged)
-			g_donorHeldBytes += length;
 		std::lock_guard<std::mutex> lock(g_stateMutex);
 		g_donors[donorIndex].available = g_donors[donorIndex].available > length ? g_donors[donorIndex].available - length : 0;
 		return length;
@@ -423,7 +432,7 @@ namespace IOSRamDonor
 {
 	bool IsEnabled()
 	{
-		return UserEnabled() && DonorIdentifier() != nil;
+		return UserEnabled() && DonorIdentifiers().count > 0;
 	}
 
 	size_t BackWithDonors(void* target, size_t size)
@@ -491,8 +500,6 @@ namespace IOSRamDonor
 				if (alive)
 					SendFree(donor, it->chunkId);
 				g_donatedBytes -= it->length;
-				if (it->charged)
-					g_donorHeldBytes -= it->length;
 				it = g_chunks.erase(it);
 			}
 			else
@@ -525,7 +532,8 @@ namespace IOSRamDonor
 		g_requestIds.clear();
 		g_chunks.clear();
 		g_donatedBytes = 0;
-		g_donorHeldBytes = 0;
+		g_donorFootprint = 0;
+		g_startedIdentifiers.clear();
 		if (g_listener)
 		{
 			xpc_connection_cancel(g_listener);
@@ -557,6 +565,43 @@ namespace IOSRamDonor
 				word(viaProperties), word(viaTaskLimit), (unsigned long long)(after >> 20));
 	}
 
+	// Asks every donor for its own footprint without blocking the caller; the replies update the cached total.
+	void RefreshDonorFootprintsIfStale()
+	{
+		const double now = CFAbsoluteTimeGetCurrent();
+		double last = g_footprintRefreshedAt.load();
+		if (now - last < 1.0 || !g_footprintRefreshedAt.compare_exchange_strong(last, now))
+			return;
+		std::vector<xpc_connection_t> connections;
+		{
+			std::lock_guard<std::mutex> lock(g_stateMutex);
+			for (const auto& donor : g_donors)
+				if (donor.alive && donor.connection)
+					connections.push_back(donor.connection);
+		}
+		for (xpc_connection_t connection : connections)
+		{
+			xpc_object_t request = xpc_dictionary_create(nullptr, nullptr, 0);
+			xpc_dictionary_set_string(request, ESP_DONOR_KEY_OP, ESP_DONOR_OP_STATUS);
+			xpc_connection_send_message_with_reply(connection, request, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^(xpc_object_t reply) {
+				if (xpc_get_type(reply) != XPC_TYPE_DICTIONARY)
+					return;
+				const int64_t pid = xpc_dictionary_get_int64(reply, ESP_DONOR_KEY_PID);
+				const uint64_t footprint = xpc_dictionary_get_uint64(reply, ESP_DONOR_KEY_FOOTPRINT);
+				std::lock_guard<std::mutex> lock(g_stateMutex);
+				uint64_t total = 0;
+				for (auto& donor : g_donors)
+				{
+					if (donor.pid == pid)
+						donor.footprint = footprint;
+					if (donor.alive)
+						total += donor.footprint;
+				}
+				g_donorFootprint = total;
+			});
+		}
+	}
+
 	uint64_t AvailableMemory()
 	{
 		const uint64_t raw = (uint64_t)os_proc_available_memory();
@@ -565,10 +610,10 @@ namespace IOSRamDonor
 		if (!g_limitVerified.load(std::memory_order_relaxed))
 			return raw;
 		const uint64_t footprint = OwnFootprintBytes();
-		// The ceiling covers this app plus its donors. Pages the donor never touched (or that iOS charges to
-		// whoever touches them) already sit in our own footprint, so only donor-held bytes are added; counting
-		// all donated bytes made the app report "0 MB available" with iOS still having room.
-		const uint64_t total = footprint + (uint64_t)g_donorHeldBytes.load();
+		// The ceiling covers this app plus its donors. What the donors themselves report holding is added;
+		// pages that iOS charges to this app instead are already in `footprint`, so nothing is counted twice.
+		RefreshDonorFootprintsIfStale();
+		const uint64_t total = footprint + g_donorFootprint.load();
 		const uint64_t cap = MemoryCapBytes();
 		return total < cap ? cap - total : 1;
 	}
@@ -576,6 +621,11 @@ namespace IOSRamDonor
 	size_t DonatedBytes()
 	{
 		return g_donatedBytes.load();
+	}
+
+	size_t DonorFootprintBytes()
+	{
+		return (size_t)g_donorFootprint.load();
 	}
 
 	size_t LiveDonors()

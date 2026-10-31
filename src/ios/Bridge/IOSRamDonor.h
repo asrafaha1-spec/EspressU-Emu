@@ -46,6 +46,7 @@ namespace IOSRamDonor
 
 	// Cheap, non-blocking counters for the periodic memory log line.
 	size_t DonatedBytes();
+	size_t DonorFootprintBytes(); // what the donor processes themselves report holding (refreshed about once a second)
 	size_t LiveDonors();
 
 	// Human readable one-line state for logs and the diagnostics screen.

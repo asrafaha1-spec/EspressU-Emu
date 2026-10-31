@@ -80,6 +80,8 @@ targets:
         link: false
       - target: StikJITHelper
       - target: EspressURamDonor
+      - target: EspressURamDonor2
+      - target: EspressURamDonor3
       - framework: ../../dependencies/StikJIT.xcframework
         embed: true
         link: false
@@ -139,6 +141,50 @@ targets:
       base:
         PRODUCT_NAME: EspressURamDonor
         PRODUCT_BUNDLE_IDENTIFIER: dev.espressu.EspressU.RamDonor
+        INFOPLIST_FILE: RamDonor/Info.plist
+        GENERATE_INFOPLIST_FILE: 'NO'
+        CODE_SIGN_ENTITLEMENTS: RamDonor/RamDonor.entitlements
+        SWIFT_OBJC_BRIDGING_HEADER: ''
+        ASSETCATALOG_COMPILER_APPICON_NAME: ''
+        APPLICATION_EXTENSION_API_ONLY: 'YES'
+        CLANG_ENABLE_OBJC_ARC: 'YES'
+        SKIP_INSTALL: 'YES'
+  EspressURamDonor2:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: '15.0'
+    sources:
+      - path: RamDonor
+        type: group
+        excludes:
+          - '*.plist'
+          - '*.entitlements'
+    settings:
+      base:
+        PRODUCT_NAME: EspressURamDonor2
+        PRODUCT_BUNDLE_IDENTIFIER: dev.espressu.EspressU.RamDonor2
+        INFOPLIST_FILE: RamDonor/Info.plist
+        GENERATE_INFOPLIST_FILE: 'NO'
+        CODE_SIGN_ENTITLEMENTS: RamDonor/RamDonor.entitlements
+        SWIFT_OBJC_BRIDGING_HEADER: ''
+        ASSETCATALOG_COMPILER_APPICON_NAME: ''
+        APPLICATION_EXTENSION_API_ONLY: 'YES'
+        CLANG_ENABLE_OBJC_ARC: 'YES'
+        SKIP_INSTALL: 'YES'
+  EspressURamDonor3:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: '15.0'
+    sources:
+      - path: RamDonor
+        type: group
+        excludes:
+          - '*.plist'
+          - '*.entitlements'
+    settings:
+      base:
+        PRODUCT_NAME: EspressURamDonor3
+        PRODUCT_BUNDLE_IDENTIFIER: dev.espressu.EspressU.RamDonor3
         INFOPLIST_FILE: RamDonor/Info.plist
         GENERATE_INFOPLIST_FILE: 'NO'
         CODE_SIGN_ENTITLEMENTS: RamDonor/RamDonor.entitlements
