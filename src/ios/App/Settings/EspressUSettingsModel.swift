@@ -22,7 +22,7 @@ enum SettingsCategory: Int, CaseIterable, Identifiable {
     var summary: String {
         switch self {
         case .jit:         return "Built-in JIT: on or off, status and pairing."
-        case .performance: return "How games run: the CPU and heat."
+        case .performance: return "How games run: the CPU, heat and memory."
         case .graphics:    return "Picture quality, frame pacing and shaders."
         case .controls:    return "Controllers and motion."
         case .screenSound: return "Screen layout, brightness, volume and the microphone."
@@ -34,7 +34,7 @@ enum SettingsCategory: Int, CaseIterable, Identifiable {
     var hint: String {
         switch self {
         case .jit:         return "Status, pairing"
-        case .performance: return "CPU cores, speed, heat"
+        case .performance: return "CPU cores, speed, heat, memory"
         case .graphics:    return "Resolution, shaders"
         case .controls:    return "Touch, controllers, motion"
         case .screenSound: return "Layout, brightness, volume"
