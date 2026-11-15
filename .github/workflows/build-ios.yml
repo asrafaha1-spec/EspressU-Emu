@@ -45,7 +45,7 @@ jobs:
       - name: Build StikJIT
         run: |
           mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
-          ci/build-stikjit.sh
+          STIKJIT_LIBRARY_EVOLUTION=NO ci/build-stikjit.sh
 
       - name: Build Cemu.framework
         run: |
